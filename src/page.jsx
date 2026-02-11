@@ -1,5 +1,8 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { AFFIRMATIONS, ELEMENT_BADGE, GOALS, I18N, MICRO_ACTIONS, QUIZ, QUIZ_TEXT } from "./constants/index.js";
+
+const TRANSITION_MS = 4000;
 
 function formatStr(template, vars = {}) {
     return template.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
@@ -112,6 +115,15 @@ export default function Page() {
     const [evidence, setEvidence] = usePersistedState("mvp_evidence", []);
     const [todayMood, setTodayMood] = usePersistedState("mvp_todayMood", "happy");
     const [todayEvidenceText, setTodayEvidenceText] = usePersistedState("mvp_todayEvidenceText", "");
+
+    const [autoModal, setAutoModal] = useState({ open: false, key: null });
+
+    const autoModalVariant = useMemo(() => {
+        if (!autoModal.open || !autoModal.key) return null;
+        const list = dict?.modals?.[autoModal.key];
+        if (!Array.isArray(list) || list.length === 0) return null;
+        return pickOne(list, `${todayKey()}|${autoModal.key}|${lang}`);
+    }, [autoModal.open, autoModal.key, lang, dict]);
 
     const doneDates = useMemo(() => new Set(doneDatesArr), [doneDatesArr]);
     const todayDone = doneDates.has(todayKey());
@@ -263,7 +275,14 @@ export default function Page() {
                             goalText={goalText}
                             onPickGoal={setGoalId}
                             onGoalText={setGoalText}
-                            onContinue={startQuiz}
+                            onContinue={() => {
+                                if (!goalId) return;
+                                setAutoModal({ open: true, key: "start" });
+                                setTimeout(() => {
+                                    setAutoModal({ open: false, key: null });
+                                    setView("quiz");
+                                }, TRANSITION_MS);
+                            }}
                             t={t}
                             lang={lang}
                         />
@@ -350,6 +369,14 @@ export default function Page() {
                         />
                     )}
                 </div>
+                <AutoTransitionModal
+                    open={autoModal.open && !!autoModalVariant}
+                    title={autoModalVariant?.title}
+                    body={autoModalVariant?.body}
+                    tip={autoModalVariant?.tip}
+                    t={t}
+                    durationMs={TRANSITION_MS}
+                />
 
                 <BottomNav
                     current={view}
@@ -359,6 +386,263 @@ export default function Page() {
                 />
             </div>
         </div>
+    );
+}
+
+function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
+    const D = durationMs / 1000;
+
+    return (
+        <AnimatePresence>
+            {open ? (
+                <motion.div
+                    className="fixed inset-0 z-50 grid place-items-center p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                >
+                    {/* overlay */}
+                    <motion.div
+                        className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    />
+
+                    {/* panel - taller portrait card */}
+                    <motion.div
+                        className={[
+                            "relative w-full max-w-sm sm:max-w-md",
+                            "overflow-hidden rounded-[36px]",
+                            "border border-black/10 bg-white/92 shadow-2xl backdrop-blur-xl",
+                            "ring-1 ring-black/10",
+                            "dark:border-white/10 dark:bg-neutral-950/82",
+                        ].join(" ")}
+                        initial={{ opacity: 0, y: 18, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.99 }}
+                        transition={{ duration: 0.22, ease: "easeOut" }}
+                    >
+                        {/* Top animation area */}
+                        <div className="relative h-72 sm:h-80">
+                            {/* soft neutral background blobs */}
+                            <div className="absolute inset-0">
+                                <motion.div
+                                    className="absolute -left-24 top-10 h-64 w-64 rounded-full bg-black/10 blur-3xl dark:bg-white/10"
+                                    initial={{ x: -24, y: 0, scale: 0.92, opacity: 0.7 }}
+                                    animate={{ x: 52, y: 18, scale: 1.07, opacity: 0.9 }}
+                                    transition={{ duration: D, ease: "easeInOut" }}
+                                />
+                                <motion.div
+                                    className="absolute -right-28 bottom-0 h-72 w-72 rounded-full bg-black/10 blur-3xl dark:bg-white/10"
+                                    initial={{ x: 24, y: 0, scale: 0.95, opacity: 0.7 }}
+                                    animate={{ x: -52, y: -18, scale: 1.1, opacity: 0.9 }}
+                                    transition={{ duration: D, ease: "easeInOut" }}
+                                />
+                            </div>
+
+                            <div className="absolute inset-0 grid place-items-center">
+                                <svg width="280" height="280" viewBox="0 0 280 280" className="opacity-95">
+                                    <defs>
+                                        {/* FIXED-COLOR gradients (not affected by light/dark mode) */}
+                                        <radialGradient id="petalPink" cx="35%" cy="30%" r="70%">
+                                            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
+                                            <stop offset="58%" stopColor="#FBCFE8" stopOpacity="0.95" /> {/* pink */}
+                                            <stop offset="100%" stopColor="#FB7185" stopOpacity="0.95" /> {/* rose */}
+                                        </radialGradient>
+
+                                        <radialGradient id="petalCoral" cx="35%" cy="30%" r="70%">
+                                            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
+                                            <stop offset="62%" stopColor="#FED7AA" stopOpacity="0.95" /> {/* light orange */}
+                                            <stop offset="100%" stopColor="#FB923C" stopOpacity="0.95" /> {/* orange */}
+                                        </radialGradient>
+
+                                        <radialGradient id="centerWarm" cx="35%" cy="30%" r="70%">
+                                            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.98" />
+                                            <stop offset="55%" stopColor="#FDBA74" stopOpacity="0.95" />
+                                            <stop offset="100%" stopColor="#F43F5E" stopOpacity="0.92" />
+                                        </radialGradient>
+
+                                        <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                            <feGaussianBlur stdDeviation="6" result="blur" />
+                                            <feMerge>
+                                                <feMergeNode in="blur" />
+                                                <feMergeNode in="SourceGraphic" />
+                                            </feMerge>
+                                        </filter>
+                                    </defs>
+
+                                    {/* warm halo */}
+                                    <motion.circle
+                                        cx="140"
+                                        cy="140"
+                                        r="54"
+                                        fill="none"
+                                        stroke="#FBCFE8"
+                                        strokeOpacity="0.55"
+                                        strokeWidth="28"
+                                        filter="url(#softGlow)"
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: [0, 0.5, 0.22], scale: [0.9, 1.06, 1.0] }}
+                                        transition={{ duration: D, times: [0, 0.55, 1], ease: "easeInOut" }}
+                                    />
+
+                                    {/* sparkles */}
+                                    <motion.g
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: [0, 0, 1, 0] }}
+                                        transition={{ duration: D, times: [0, 0.5, 0.78, 1], ease: "easeOut" }}
+                                    >
+                                        <motion.circle
+                                            cx="92"
+                                            cy="98"
+                                            r="2.6"
+                                            fill="#FFFFFF"
+                                            opacity="0.85"
+                                            animate={{ y: [0, -8, 0], opacity: [0.35, 0.95, 0.35] }}
+                                            transition={{ duration: 0.95, repeat: Infinity, ease: "easeInOut" }}
+                                        />
+                                        <motion.circle
+                                            cx="198"
+                                            cy="102"
+                                            r="2.2"
+                                            fill="#FED7AA"
+                                            opacity="0.85"
+                                            animate={{ y: [0, -9, 0], opacity: [0.3, 0.9, 0.3] }}
+                                            transition={{ duration: 1.05, repeat: Infinity, ease: "easeInOut", delay: 0.1 }}
+                                        />
+                                        <motion.circle
+                                            cx="212"
+                                            cy="160"
+                                            r="2.0"
+                                            fill="#FBCFE8"
+                                            opacity="0.8"
+                                            animate={{ y: [0, -7, 0], opacity: [0.25, 0.85, 0.25] }}
+                                            transition={{ duration: 1.15, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
+                                        />
+                                    </motion.g>
+                                    {/* bud shell (closed) -> fades out */}
+                                    <motion.path
+                                        d="M140 98
+                       C120 114, 112 132, 120 154
+                       C126 170, 136 178, 140 194
+                       C144 178, 154 170, 160 154
+                       C168 132, 160 114, 140 98 Z"
+                                        fill="#F43F5E"
+                                        opacity="0.28"
+                                        initial={{ opacity: 0.28, scale: 0.92, transformOrigin: "140px 150px" }}
+                                        animate={{ opacity: [0.28, 0.28, 0], scale: [0.92, 0.95, 1.0] }}
+                                        transition={{ duration: D, times: [0, 0.35, 0.72], ease: "easeInOut" }}
+                                    />
+
+                                    {/* OUTER wobble group (starts after bloom) */}
+                                    <motion.g
+                                        style={{ transformOrigin: "140px 150px" }}
+                                        initial={{ rotate: 0, y: 0 }}
+                                        animate={{ rotate: [0, -2.4, 2.4, -1.8, 1.8, 0], y: [0, 2, -2, 1.4, -1.4, 0] }}
+                                        transition={{
+                                            duration: 1.6,
+                                            repeat: Infinity,
+                                            ease: "easeInOut",
+                                            delay: 0.9, // wobble starts after opening
+                                        }}
+                                    >
+                                        {/* INNER bloom group (one-time) */}
+                                        <motion.g
+                                            style={{ transformOrigin: "140px 150px" }}
+                                            initial={{ scale: 0.68, opacity: 0 }}
+                                            animate={{ scale: [0.68, 1.02, 1.0], opacity: [0, 1, 1] }}
+                                            transition={{
+                                                duration: D,
+                                                times: [0, 0.75, 1],
+                                                ease: [0.16, 1, 0.3, 1],
+                                            }}
+                                        >
+                                            {/* petals */}
+                                            {[
+                                                { rot: 0, delay: 0.10, fill: "url(#petalPink)" },
+                                                { rot: 60, delay: 0.16, fill: "url(#petalCoral)" },
+                                                { rot: 120, delay: 0.22, fill: "url(#petalPink)" },
+                                                { rot: 180, delay: 0.28, fill: "url(#petalCoral)" },
+                                                { rot: 240, delay: 0.34, fill: "url(#petalPink)" },
+                                                { rot: 300, delay: 0.40, fill: "url(#petalCoral)" },
+                                            ].map((p) => (
+                                                <motion.path
+                                                    key={p.rot}
+                                                    d="M140 96
+                             C118 112, 114 140, 128 162
+                             C138 178, 154 186, 140 206
+                             C126 186, 142 178, 152 162
+                             C166 140, 162 112, 140 96 Z"
+                                                    fill={p.fill}
+                                                    style={{ transformOrigin: "140px 150px" }}
+                                                    initial={{
+                                                        rotate: p.rot,
+                                                        scale: 0.10,
+                                                        opacity: 0,
+                                                        y: 14, // tucked in
+                                                    }}
+                                                    animate={{
+                                                        rotate: p.rot,
+                                                        y: [14, -2, 0], // open upward then settle
+                                                        scale: [0.10, 1.08, 1.0],
+                                                        opacity: [0, 1, 1],
+                                                    }}
+                                                    transition={{
+                                                        duration: D,
+                                                        delay: p.delay,
+                                                        times: [0, 0.72, 1],
+                                                        ease: [0.16, 1, 0.3, 1],
+                                                    }}
+                                                />
+                                            ))}
+
+                                            {/* center */}
+                                            <motion.circle
+                                                cx="140"
+                                                cy="150"
+                                                r="12"
+                                                fill="url(#centerWarm)"
+                                                filter="url(#softGlow)"
+                                                initial={{ scale: 0.25, opacity: 0 }}
+                                                animate={{ scale: [0.25, 1.12, 1.0], opacity: 1 }}
+                                                transition={{ duration: 0.55, delay: 0.46, ease: [0.16, 1, 0.3, 1] }}
+                                            />
+                                            <motion.circle
+                                                cx="136"
+                                                cy="146"
+                                                r="3.6"
+                                                fill="#FFFFFF"
+                                                opacity="0.75"
+                                                initial={{ opacity: 0, scale: 0.6 }}
+                                                animate={{ opacity: [0, 0.95, 0.75], scale: [0.6, 1.12, 1.0] }}
+                                                transition={{ duration: D, times: [0, 0.72, 1], ease: "easeOut" }}
+                                            />
+                                        </motion.g>
+                                    </motion.g>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Bottom text area */}
+                        <div className="p-6 sm:p-7">
+                            <div className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</div>
+                            <div className="mt-3 text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 sm:text-xl">
+                                {body}
+                            </div>
+
+                            {tip ? (
+                                <div className="mt-5 rounded-2xl border border-black/5 bg-black/5 p-4 text-lg leading-relaxed text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300">
+                                    {tip}
+                                </div>
+                            ) : null}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }
 
