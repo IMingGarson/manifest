@@ -126,6 +126,11 @@ export default function Page() {
 
     const profile = useMemo(() => computeProfile(answers), [answers]);
     const goal = useMemo(() => GOALS.find((g) => g.id === goalId) || null, [goalId]);
+    const isReady = goalId && answers.length === QUIZ.length;
+    function safeGo(next) {
+        if (!isReady && next === "home") setView("welcome");
+        else setView(next);
+    }
 
     const dailyContent = useMemo(() => {
         if (!goalId) return null;
@@ -340,7 +345,7 @@ export default function Page() {
                             setLang={setLang}
                             theme={theme}
                             setTheme={setTheme}
-                            onBack={() => setView("home")}
+                            onBack={() => setView("welcome")}
                             t={t}
                         />
                     )}
@@ -348,7 +353,7 @@ export default function Page() {
 
                 <BottomNav
                     current={view}
-                    onGo={setView}
+                    onGo={safeGo}
                     isReady={goalId && answers.length === QUIZ.length}
                     t={t}
                 />
@@ -942,16 +947,13 @@ function BottomNav({ current, onGo, isReady, t }) {
             <div className="mx-auto w-full max-w-md px-4 pt-2 pb-[calc(0.5rem+var(--sa-bottom))] sm:max-w-lg sm:px-6 md:max-w-2xl lg:max-w-3xl">
                 <div className="flex items-center justify-between gap-2">
                     {items.map((it) => {
-                        const disabled = !isReady && it.id !== "settings";
                         const active = current === it.id;
                         return (
                             <button
                                 key={it.id}
                                 onClick={() => onGo(it.id)}
-                                disabled={disabled}
                                 className={[
                                     "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-xs transition active:scale-[0.99]",
-                                    disabled ? "opacity-40" : "opacity-100",
                                     active
                                         ? "bg-black/5 text-neutral-900 dark:bg-white/10 dark:text-neutral-50"
                                         : "text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10",
