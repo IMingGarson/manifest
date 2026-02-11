@@ -197,9 +197,9 @@ export default function Page() {
 
     const [doneDatesArr, setDoneDatesArr] = usePersistedState("mvp_doneDates", []);
     const [streak, setStreak] = usePersistedState("mvp_streak", 0);
-    const [evidence, setEvidence] = usePersistedState("mvp_evidence", []);
+    const [steps, setSteps] = usePersistedState("mvp_Steps", []);
     const [todayMood, setTodayMood] = usePersistedState("mvp_todayMood", "happy");
-    const [todayEvidenceText, setTodayEvidenceText] = usePersistedState("mvp_todayEvidenceText", "");
+    const [todayStepsText, setTodayStepsText] = usePersistedState("mvp_todayStepsText", "");
 
     const [autoModal, setAutoModal] = useState({ open: false, key: null });
 
@@ -270,9 +270,9 @@ export default function Page() {
         setPicked({});
         setDoneDatesArr([]);
         setStreak(0);
-        setEvidence([]);
+        setSteps([]);
         setTodayMood("happy");
-        setTodayEvidenceText("");
+        setTodayStepsText("");
     }
 
     function onPickQuizOption(q, optId) {
@@ -307,15 +307,15 @@ export default function Page() {
         const nextStreak = newDone.has(yk) ? (streak || 0) + 1 : 1;
         setStreak(nextStreak);
 
-        const text = (todayEvidenceText || "").trim();
+        const text = (todayStepsText || "").trim();
         const entry = {
             date: k,
             mood: todayMood,
             text: text || (lang === "en" ? "I completed today’s micro-action." : "我完成了今天的微行動。"),
             goalId,
         };
-        setEvidence((ev) => [entry, ...ev]);
-        setTodayEvidenceText("");
+        setSteps((ev) => [entry, ...ev]);
+        setTodayStepsText("");
     }
 
     const moods = useMemo(
@@ -452,8 +452,8 @@ export default function Page() {
                             moods={moods}
                             todayMood={todayMood}
                             onMood={setTodayMood}
-                            todayEvidenceText={todayEvidenceText}
-                            onEvidenceText={setTodayEvidenceText}
+                            todayStepsText={todayStepsText}
+                            onStepsText={setTodayStepsText}
                             onDone={markDoneToday}
                             onOpenWall={() => safeSetView("wall")}
                             t={t}
@@ -462,11 +462,11 @@ export default function Page() {
                     )}
 
                     {view === "wall" && (
-                        <EvidenceWall
-                            evidence={evidence}
+                        <StepsWall
+                            steps={steps}
                             streak={streak}
                             doneCount={doneDates.size}
-                            evidenceCount={evidence.length}
+                            stepsTaken={steps.length}
                             goalLabels={GOALS.reduce((acc, g) => {
                                 acc[g.id] = { emoji: g.emoji, label: t(`goals.${g.id}`) };
                                 return acc;
@@ -836,25 +836,52 @@ function TapButton({ onPress, disabled, className, children, type = "button", ..
 
 function Pill({ children, active, onClick, className = "", disabled = false }) {
     return (
-        <button
+        <TapButton
             onClick={onClick}
             disabled={disabled}
+            aria-pressed={!!active}
             className={[
-                "rounded-2xl px-3 py-2 font-medium transition",
-                "text-xs sm:text-sm",
+                // size / hit-area (bigger, clearer)
+                "rounded-2xl px-4 py-2.5 sm:px-4 sm:py-3",
+                "text-sm sm:text-base font-semibold",
                 "whitespace-nowrap shrink-0",
-                "active:scale-[0.99]",
+                "transition active:scale-[0.98]",
+                "touch-manipulation select-none",
+
+                // focus ring (keyboard / a11y, also helps visibility)
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/20 dark:focus-visible:ring-white/25",
+
                 disabled ? "opacity-40" : "opacity-100",
+
                 active
-                    ? "bg-black/10 text-neutral-900 dark:bg-white/15 dark:text-neutral-50"
-                    : "bg-black/5 text-neutral-700 hover:bg-black/10 dark:bg-white/10 dark:text-neutral-200 dark:hover:bg-white/15",
+                    ? [
+                        // light
+                        "bg-neutral-900/5 text-neutral-900",
+                        "ring-3 ring-neutral-900/15",
+                        "bg-black/10",
+
+                        // dark
+                        "dark:bg-white/10 dark:text-white",
+                        "dark:ring-white/20 dark:shadow-black/20",
+                    ].join(" ")
+                    : [
+                        // light
+                        "bg-black/5 text-neutral-700 hover:bg-black/10",
+                        "ring-1 ring-black/5",
+
+                        // dark
+                        "dark:bg-white/10 dark:text-neutral-200 dark:hover:bg-white/15",
+                        "dark:ring-white/10",
+                    ].join(" "),
+
                 className,
             ].join(" ")}
         >
             {children}
-        </button>
+        </TapButton>
     );
 }
+
 
 function PrimaryButton({ children, onClick, disabled = false, className = "" }) {
     return (
@@ -925,22 +952,6 @@ function TopBar({
                     <div className="text-sm sm:text-base font-semibold tracking-tight truncate">{appName}</div>
                     <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 truncate">{tagline}</div>
                 </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-nowrap shrink-0">
-                {canGoWelcome && (
-                    <Pill onClick={onGoWelcome} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
-                        {t("nav.welcome")}
-                    </Pill>
-                )}
-                {canGoHome && (
-                    <Pill onClick={onGoHome} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
-                        {t("nav.home")}
-                    </Pill>
-                )}
-                <Pill onClick={onRestart} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
-                    {t("nav.restart")}
-                </Pill>
             </div>
         </div>
     );
@@ -1156,8 +1167,8 @@ function Home({
     moods,
     todayMood,
     onMood,
-    todayEvidenceText,
-    onEvidenceText,
+    todayStepsText,
+    onStepsText,
     onDone,
     onOpenWall,
     t,
@@ -1200,9 +1211,9 @@ function Home({
                         {goalText ? <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">“{goalText}”</div> : null}
                     </div>
 
-                    <div className="rounded-3xl border border-black/5 bg-black/5 px-3 py-2 text-right dark:border-white/10 dark:bg-white/5">
-                        <div className="text-[11px] sm:text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.streak")}</div>
-                        <div className="text-lg sm:text-xl font-semibold tracking-tight">{streak}</div>
+                    <div className="rounded-xl border border-black/5 bg-black/5 px-3 py-2 text-right dark:border-white/10 dark:bg-white/5">
+                        <div className="text-[11px] text-left sm:text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.streak")}</div>
+                        <div className="text-lg text-left sm:text-xl font-semibold tracking-tight">{streak}</div>
                     </div>
                 </div>
 
@@ -1237,11 +1248,11 @@ function Home({
                 </div>
 
                 <div className="mt-4">
-                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.evidenceInputLabel")}</label>
+                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.StepsInputLabel")}</label>
                     <input
-                        value={todayEvidenceText}
-                        onChange={(e) => onEvidenceText(e.target.value)}
-                        placeholder={t("home.evidencePlaceholder")}
+                        value={todayStepsText}
+                        onChange={(e) => onStepsText(e.target.value)}
+                        placeholder={t("home.StepsPlaceholder")}
                         className={[
                             "mt-2 w-full rounded-2xl px-4 py-3 sm:py-3.5 outline-none",
                             "text-sm sm:text-base",
@@ -1257,7 +1268,7 @@ function Home({
                         {todayDone ? t("home.doneDone") : t("home.done")}
                     </PrimaryButton>
 
-                    <SecondaryButton onClick={onOpenWall}>{t("home.openEvidence")}</SecondaryButton>
+                    <SecondaryButton onClick={onOpenWall}>{t("home.openSteps")}</SecondaryButton>
                 </div>
             </SoftCard>
 
@@ -1268,24 +1279,23 @@ function Home({
     );
 }
 
-function EvidenceWall({ evidence, streak, doneCount, evidenceCount, goalLabels, moodsMap, onBack, t }) {
+function StepsWall({ steps, streak, doneCount, stepsTaken, goalLabels, moodsMap, t }) {
     const [filterGoal, setFilterGoal] = useState("all");
     const goalsForFilter = useMemo(() => [{ id: "all" }, ...Object.keys(goalLabels).map((id) => ({ id }))], [goalLabels]);
 
     const filtered = useMemo(() => {
-        if (filterGoal === "all") return evidence;
-        return evidence.filter((e) => e.goalId === filterGoal);
-    }, [evidence, filterGoal]);
+        if (filterGoal === "all") return steps;
+        return steps.filter((e) => e.goalId === filterGoal);
+    }, [steps, filterGoal]);
 
     return (
         <div className="space-y-4 sm:space-y-5">
             <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("evidence.title")}</div>
-                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("evidence.subtitle")}</div>
+                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("steps.title")}</div>
+                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("steps.subtitle")}</div>
                     </div>
-                    <Pill onClick={onBack}>{t("nav.back")}</Pill>
                 </div>
 
                 {/* ✅ Progress summary table */}
@@ -1301,8 +1311,8 @@ function EvidenceWall({ evidence, streak, doneCount, evidenceCount, goalLabels, 
                                 <td className="px-4 py-3 text-right font-semibold">{doneCount}</td>
                             </tr>
                             <tr>
-                                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t("progress.evidenceCount")}</td>
-                                <td className="px-4 py-3 text-right font-semibold">{evidenceCount}</td>
+                                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t("progress.stepsTaken")}</td>
+                                <td className="px-4 py-3 text-right font-semibold">{stepsTaken}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1312,7 +1322,7 @@ function EvidenceWall({ evidence, streak, doneCount, evidenceCount, goalLabels, 
                     {goalsForFilter.map((g) => {
                         const active = filterGoal === g.id;
                         const label =
-                            g.id === "all" ? t("evidence.filterAll") : `${goalLabels[g.id]?.emoji || ""} ${goalLabels[g.id]?.label || ""}`;
+                            g.id === "all" ? t("steps.filterAll") : `${goalLabels[g.id]?.emoji || ""} ${goalLabels[g.id]?.label || ""}`;
                         return (
                             <Pill key={g.id} active={active} onClick={() => setFilterGoal(g.id)}>
                                 {label}
@@ -1324,7 +1334,7 @@ function EvidenceWall({ evidence, streak, doneCount, evidenceCount, goalLabels, 
                 <div className="mt-4 space-y-3">
                     {filtered.length === 0 ? (
                         <div className="rounded-3xl border border-black/5 bg-black/5 p-4 text-sm sm:text-base text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300">
-                            {t("evidence.empty")}
+                            {t("steps.empty")}
                         </div>
                     ) : (
                         filtered.map((e, idx) => {

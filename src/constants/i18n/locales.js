@@ -9,7 +9,7 @@ export const I18N = {
             today: "今日",
             journey: "心路足跡",
             // legacy keys (safe to keep even if UI no longer uses them)
-            evidence: "證據牆",
+            steps: "證據牆",
             progress: "進度",
             settings: "設定",
             home: "回首頁",
@@ -72,8 +72,8 @@ export const I18N = {
             openProgress: "查看進度",
             gentleNote: "如果今天狀態不好也沒關係。把行動縮小到「你做得到」的程度，才是能持續的關鍵。",
         },
-        evidence: {
-            // you can keep these for legacy (if some screens still reference evidence.*)
+        steps: {
+            // you can keep these for legacy (if some screens still reference steps.*)
             title: "證據牆",
             subtitle: "你完成的每一步，都在替你建立更穩的信念。",
             empty: "目前還沒有紀錄。完成第一天後，就會出現在這裡。",
@@ -85,7 +85,7 @@ export const I18N = {
             subtitle: "穩定累積，勝過偶爾爆衝。",
             streak: "連續天數",
             daysDone: "完成天數",
-            evidenceCount: "證據筆數",
+            stepsTaken: "累積足跡",
             milestonesTitle: "里程碑",
             milestonesBody: "7 天、14 天、30 天完成後，我們會在這裡給你一個小回顧。",
         },
@@ -339,7 +339,7 @@ export const I18N = {
             today: "Today",
             journey: "Gallery",
             // legacy keys (safe to keep even if UI no longer uses them)
-            evidence: "Evidence",
+            steps: "Steps",
             progress: "Progress",
             settings: "Settings",
             home: "Home",
@@ -362,7 +362,7 @@ export const I18N = {
             cta: "Build my daily flow",
             ctaDisabled: "Select a goal to continue",
             noteTitle: "Your daily flow is simple",
-            noteBody: "30–60 seconds a day: see a cue → do a small action → log one piece of evidence. Consistency beats perfection.",
+            noteBody: "30–60 seconds a day: see a cue → do a small action → log one piece of steps. Consistency beats perfection.",
         },
         quiz: {
             title: "Quick Quiz",
@@ -392,18 +392,18 @@ export const I18N = {
             affirmation: "Affirmation",
             action: "Micro-action (5–10 min)",
             mood: "How are you today?",
-            evidenceInputLabel: "One sentence of evidence (optional)",
+            evidenceInputLabel: "One sentence of steps (optional)",
             evidencePlaceholder: "E.g., I moved a delayed task forward for 10 minutes, and I feel more grounded.",
             done: "Complete today",
             doneDone: "Completed",
-            doneSub: "After completing, we’ll add it to your Evidence wall.",
+            doneSub: "After completing, we’ll add it to your Steps wall.",
             openEvidence: "Open Gallery",
             // legacy
             openProgress: "Open Progress",
             gentleNote: "If today feels heavy, that’s okay. Shrink the action to something you can truly complete—consistency is the win.",
         },
-        evidence: {
-            title: "Evidence",
+        steps: {
+            title: "Steps",
             subtitle: "Every completed step becomes proof you’re changing.",
             empty: "No entries yet. Complete your first day to see it here.",
             filterAll: "All",
@@ -414,7 +414,7 @@ export const I18N = {
             subtitle: "Steady beats intense.",
             streak: "Streak",
             daysDone: "Days completed",
-            evidenceCount: "Evidence entries",
+            stepsTaken: "Steps completed",
             milestonesTitle: "Milestones",
             milestonesBody: "At 7, 14, and 30 days, you’ll see a short reflection here.",
         },
@@ -428,7 +428,7 @@ export const I18N = {
             privacyTitle: "Privacy",
             privacyBody: "By default, your content stays on this device (MVP). If cloud sync is added later, we’ll explain it clearly and ask for consent.",
             aboutTitle: "About",
-            aboutBody: "Manifest helps you build belief and momentum through cues, micro-actions, and an accumulating evidence wall.",
+            aboutBody: "Manifest helps you build belief and momentum through cues, micro-actions, and an accumulating steps wall.",
         },
         goals: {
             relationship: "Relationships",
@@ -650,7 +650,7 @@ export const I18N = {
                 },
                 {
                     title: "Earth: put belief into action",
-                    body: "You may not love pretty words, but you follow through. We’ll build belief through what you’ve actually done—your own evidence.",
+                    body: "You may not love pretty words, but you follow through. We’ll build belief through what you’ve actually done—your own steps.",
                     tip: "What you’ve done is proof.",
                     cta: "Continue",
                 },
