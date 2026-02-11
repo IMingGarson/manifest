@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AFFIRMATIONS, ELEMENT_BADGE, GOALS, I18N, MICRO_ACTIONS, QUIZ, QUIZ_TEXT } from "./constants/index.js";
 
 const TRANSITION_MS = 4000;
@@ -7,6 +7,7 @@ const TRANSITION_MS = 4000;
 function formatStr(template, vars = {}) {
     return template.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 }
+
 function usePersistedState(key, initialValue) {
     const [val, setVal] = useState(() => {
         try {
@@ -60,11 +61,13 @@ function todayKey() {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
 }
+
 function pickOne(arr, seedStr) {
     let h = 0;
     for (let i = 0; i < seedStr.length; i++) h = (h * 31 + seedStr.charCodeAt(i)) >>> 0;
     return arr[h % arr.length];
 }
+
 function computeProfile(answerOpts) {
     const scores = { doer: 0, thinker: 0, feeler: 0, builder: 0, fire: 0, wind: 0, water: 0, earth: 0 };
     for (const opt of answerOpts) {
@@ -76,6 +79,94 @@ function computeProfile(answerOpts) {
     const archetype = archetypes.reduce((best, k) => (scores[k] > scores[best] ? k : best), "doer");
     const element = elements.reduce((best, k) => (scores[k] > scores[best] ? k : best), "fire");
     return { archetype, element, scores };
+}
+
+/**
+ * ----------------------------------------------------------------------------
+ * Device-first tap helper
+ * ----------------------------------------------------------------------------
+ */
+function useTapLock() {
+    const lockRef = useRef(false);
+    const lock = useCallback(() => {
+        if (lockRef.current) return false;
+        lockRef.current = true;
+        return true;
+    }, []);
+    const unlock = useCallback(() => {
+        lockRef.current = false;
+    }, []);
+    return { lock, unlock };
+}
+
+function isPrimaryPointer(e) {
+    return !!e && "pointerType" in e;
+}
+
+function useModalA11y({ open, panelRef, onRequestClose, initialFocusRef }) {
+    useEffect(() => {
+        if (!open) return;
+
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        const panel = panelRef?.current;
+        const initialEl = initialFocusRef?.current || panel;
+
+        queueMicrotask(() => {
+            try {
+                initialEl?.focus?.();
+            } catch { }
+        });
+
+        const onKeyDown = (e) => {
+            if (!open) return;
+
+            if (e.key === "Escape") {
+                e.preventDefault();
+                onRequestClose?.("escape");
+                return;
+            }
+
+            if (e.key !== "Tab") return;
+            if (!panel) return;
+
+            const focusables = panel.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            const list = Array.from(focusables).filter(
+                (el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden")
+            );
+
+            if (list.length === 0) {
+                e.preventDefault();
+                panel.focus?.();
+                return;
+            }
+
+            const first = list[0];
+            const last = list[list.length - 1];
+            const active = document.activeElement;
+
+            if (e.shiftKey) {
+                if (active === first || !panel.contains(active)) {
+                    e.preventDefault();
+                    last.focus();
+                }
+            } else {
+                if (active === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        };
+
+        document.addEventListener("keydown", onKeyDown, true);
+        return () => {
+            document.body.style.overflow = prevOverflow;
+            document.removeEventListener("keydown", onKeyDown, true);
+        };
+    }, [open, panelRef, onRequestClose, initialFocusRef]);
 }
 
 /**
@@ -94,15 +185,15 @@ export default function Page() {
         let cur = dict;
         for (const p of parts) cur = cur?.[p];
         if (typeof cur === "string") return vars ? formatStr(cur, vars) : cur;
-        return key; // fallback
+        return key;
     };
 
-    const [view, setView] = useState("welcome"); // welcome | quiz | result | home | wall | progress | settings
+    const [view, setView] = useState("welcome"); // welcome | quiz | result | home | wall | settings
     const [goalId, setGoalId] = usePersistedState("mvp_goalId", null);
     const [goalText, setGoalText] = usePersistedState("mvp_goalText", "");
 
     const [quizIndex, setQuizIndex] = usePersistedState("mvp_quizIndex", 0);
-    const [picked, setPicked] = usePersistedState("mvp_quizPicked", {}); // qid -> optionId
+    const [picked, setPicked] = usePersistedState("mvp_quizPicked", {});
 
     const [doneDatesArr, setDoneDatesArr] = usePersistedState("mvp_doneDates", []);
     const [streak, setStreak] = usePersistedState("mvp_streak", 0);
@@ -142,11 +233,17 @@ export default function Page() {
 
     const profile = useMemo(() => computeProfile(answers), [answers]);
     const goal = useMemo(() => GOALS.find((g) => g.id === goalId) || null, [goalId]);
-    const isReady = goalId && answers.length === QUIZ.length;
-    function safeGo(next) {
-        if (!isReady && next === "home") setView("welcome");
-        else setView(next);
-    }
+
+    // Setup completion
+    const isReady = !!goalId && answers.length === QUIZ.length;
+
+    const safeSetView = useCallback((next) => setView(next), []);
+
+    // "GoHome" stays to the daily home
+    const goHome = useCallback(() => safeSetView("home"), [safeSetView]);
+
+    // New: go to welcome landing
+    const goWelcome = useCallback(() => safeSetView("welcome"), [safeSetView]);
 
     const dailyContent = useMemo(() => {
         if (!goalId) return null;
@@ -165,12 +262,6 @@ export default function Page() {
                 : "做一個 5 分鐘的小行動照顧自己。";
         return { affirmation: aff, action: act };
     }, [goalId, profile.element, profile.archetype, lang]);
-
-    useEffect(() => {
-        if (goalId && answers.length === QUIZ.length && view === "welcome") {
-            // keep user in welcome if they intentionally came back
-        }
-    }, [goalId, answers.length, view]);
 
     function resetAll() {
         setGoalId(null);
@@ -192,7 +283,7 @@ export default function Page() {
         const q = QUIZ[quizIndex];
         if (!picked[q.id]) return;
         if (quizIndex === QUIZ.length - 1) {
-            setView("result");
+            safeSetView("result");
             return;
         }
         setQuizIndex((i) => i + 1);
@@ -224,7 +315,6 @@ export default function Page() {
             goalId,
         };
         setEvidence((ev) => [entry, ...ev]);
-
         setTodayEvidenceText("");
     }
 
@@ -239,47 +329,54 @@ export default function Page() {
         [lang] // eslint-disable-line
     );
 
-    /**
-     * ----------------------------------------------------------------------------
-     * Responsive baseline (phones -> tablets)
-     * - iPhone 12+ / Android: comfortable 15~16px base
-     * - tablets: slightly larger typography + more padding
-     *
-     * We do it via Tailwind responsive classes (no config change required).
-     * ----------------------------------------------------------------------------
-     */
+    const pendingNextRef = useRef(null);
+
+    const startTransitionToQuiz = useCallback(() => {
+        if (transitionTimerRef.current) {
+            clearTimeout(transitionTimerRef.current);
+            transitionTimerRef.current = null;
+        }
+        setAutoModal({ open: false, key: null });
+        pendingNextRef.current = null;
+        safeSetView("quiz");
+    }, [safeSetView]);
+
+    const onStartQuizFromGate = useCallback(() => {
+        // if no goal yet, welcome is the place to pick one
+        if (!goalId) {
+            safeSetView("welcome");
+            return;
+        }
+        safeSetView("quiz");
+    }, [goalId, safeSetView]);
+
     return (
         <div
             className={[
                 "min-h-dvh bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50",
-                // baseline type scale
                 "text-[15px] sm:text-[16px] lg:text-[17px]",
-                // better tap behavior on mobile
                 "antialiased",
             ].join(" ")}
         >
-            {/* top safe padding / centered container */}
             <div
                 className={[
-                    // width
                     "mx-auto w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl",
-                    // horizontal padding (phones -> tablets)
                     "px-4 sm:px-6 md:px-8",
-                    // SAFE AREA: top/left/right
                     "pt-[calc(1.25rem+var(--sa-top))] sm:pt-[calc(1.5rem+var(--sa-top))] md:pt-[calc(1.75rem+var(--sa-top))]",
                     "pl-[calc(1rem+var(--sa-left))] pr-[calc(1rem+var(--sa-right))]",
-                    // SAFE AREA: bottom + reserve space for BottomNav (a bit more on tablets)
                     "pb-[calc(6.75rem+var(--sa-bottom))] sm:pb-[calc(7.25rem+var(--sa-bottom))] md:pb-[calc(7.75rem+var(--sa-bottom))]",
                 ].join(" ")}
             >
                 <TopBar
                     appName={t("app.name")}
                     tagline={t("app.tagline")}
-                    onGoHome={() => setView("home")}
-                    canGoHome={view !== "home" && goalId && answers.length === QUIZ.length}
+                    onGoHome={goHome} // ✅ GoHome stays to daily home
+                    canGoHome={view !== "home" && isReady}
+                    onGoWelcome={goWelcome} // ✅ New: welcome landing
+                    canGoWelcome={view !== "welcome"}
                     onRestart={() => {
                         resetAll();
-                        setView("welcome");
+                        safeSetView("welcome");
                     }}
                     lang={lang}
                     setLang={setLang}
@@ -303,12 +400,14 @@ export default function Page() {
                                     transitionTimerRef.current = null;
                                 }
 
+                                pendingNextRef.current = "quiz";
                                 setAutoModal({ open: true, key: "start" });
 
                                 transitionTimerRef.current = setTimeout(() => {
-                                    setAutoModal({ open: false, key: null });
-                                    setView("quiz");
                                     transitionTimerRef.current = null;
+                                    setAutoModal({ open: false, key: null });
+                                    pendingNextRef.current = null;
+                                    safeSetView("quiz");
                                 }, TRANSITION_MS);
                             }}
                             t={t}
@@ -323,18 +422,27 @@ export default function Page() {
                             onPick={onPickQuizOption}
                             onNext={nextQuiz}
                             onPrev={prevQuiz}
-                            onExit={() => setView("welcome")}
+                            onExit={() => safeSetView("welcome")}
                             t={t}
                             lang={lang}
                         />
                     )}
 
                     {view === "result" && (
-                        <Result goal={goal} goalText={goalText} profile={profile} onGoHome={() => setView("home")} onBackQuiz={() => setView("quiz")} t={t} />
+                        <Result
+                            goal={goal}
+                            goalText={goalText}
+                            profile={profile}
+                            onGoHome={goHome}
+                            onBackQuiz={() => safeSetView("quiz")}
+                            t={t}
+                        />
                     )}
 
                     {view === "home" && (
                         <Home
+                            isReady={isReady}
+                            onStartQuiz={onStartQuizFromGate}
                             goal={goal}
                             goalText={goalText}
                             profile={profile}
@@ -347,15 +455,18 @@ export default function Page() {
                             todayEvidenceText={todayEvidenceText}
                             onEvidenceText={setTodayEvidenceText}
                             onDone={markDoneToday}
-                            onOpenWall={() => setView("wall")}
-                            onOpenProgress={() => setView("progress")}
+                            onOpenWall={() => safeSetView("wall")}
                             t={t}
+                            lang={lang}
                         />
                     )}
 
                     {view === "wall" && (
                         <EvidenceWall
                             evidence={evidence}
+                            streak={streak}
+                            doneCount={doneDates.size}
+                            evidenceCount={evidence.length}
                             goalLabels={GOALS.reduce((acc, g) => {
                                 acc[g.id] = { emoji: g.emoji, label: t(`goals.${g.id}`) };
                                 return acc;
@@ -364,23 +475,20 @@ export default function Page() {
                                 acc[m.id] = m.label;
                                 return acc;
                             }, {})}
-                            onBack={() => setView("home")}
-                            t={t}
-                        />
-                    )}
-
-                    {view === "progress" && (
-                        <Progress
-                            streak={streak}
-                            doneCount={doneDates.size}
-                            evidenceCount={evidence.length}
-                            onBack={() => setView("home")}
+                            onBack={goHome}
                             t={t}
                         />
                     )}
 
                     {view === "settings" && (
-                        <Settings lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} onBack={() => setView("welcome")} t={t} />
+                        <Settings
+                            lang={lang}
+                            setLang={setLang}
+                            theme={theme}
+                            setTheme={setTheme}
+                            onBack={() => safeSetView("welcome")}
+                            t={t}
+                        />
                     )}
                 </div>
 
@@ -389,18 +497,34 @@ export default function Page() {
                     title={autoModalVariant?.title}
                     body={autoModalVariant?.body}
                     tip={autoModalVariant?.tip}
-                    t={t}
                     durationMs={TRANSITION_MS}
+                    onRequestClose={() => {
+                        if (pendingNextRef.current === "quiz") startTransitionToQuiz();
+                        else setAutoModal({ open: false, key: null });
+                    }}
                 />
 
-                <BottomNav current={view} onGo={safeGo} isReady={goalId && answers.length === QUIZ.length} t={t} />
+                <BottomNav current={view} onGo={safeSetView} isReady={isReady} t={t} />
             </div>
         </div>
     );
 }
 
-function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
+function AutoTransitionModal({ open, title, body, tip, durationMs = 1500, onRequestClose }) {
     const D = durationMs / 1000;
+    const panelRef = useRef(null);
+    const closeBtnRef = useRef(null);
+
+    useModalA11y({
+        open,
+        panelRef,
+        onRequestClose,
+        initialFocusRef: closeBtnRef,
+    });
+
+    const onOverlayPointerUp = (e) => {
+        if (e.target === e.currentTarget) onRequestClose?.("overlay");
+    };
 
     return (
         <AnimatePresence>
@@ -409,11 +533,12 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                     className="fixed inset-0 z-50 grid place-items-center p-4 sm:p-6"
                     role="dialog"
                     aria-modal="true"
+                    aria-label="Transition dialog"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
+                    onPointerUp={onOverlayPointerUp}
                 >
-                    {/* overlay */}
                     <motion.div
                         className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
                         initial={{ opacity: 0 }}
@@ -421,23 +546,43 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                         exit={{ opacity: 0 }}
                     />
 
-                    {/* panel - taller portrait card */}
                     <motion.div
+                        ref={panelRef}
+                        tabIndex={-1}
                         className={[
                             "relative w-full max-w-sm sm:max-w-md md:max-w-lg",
                             "overflow-hidden rounded-[36px]",
                             "border border-black/10 bg-white/92 shadow-2xl backdrop-blur-xl",
                             "ring-1 ring-black/10",
                             "dark:border-white/10 dark:bg-neutral-950/82",
+                            "touch-manipulation",
+                            "outline-none",
                         ].join(" ")}
                         initial={{ opacity: 0, y: 18, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.99 }}
                         transition={{ duration: 0.22, ease: "easeOut" }}
+                        onPointerUp={(e) => {
+                            e.stopPropagation();
+                        }}
                     >
+                        <button
+                            ref={closeBtnRef}
+                            onPointerUp={(e) => {
+                                e.preventDefault();
+                                onRequestClose?.("button");
+                            }}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                onRequestClose?.("button");
+                            }}
+                            className="sr-only"
+                        >
+                            Close
+                        </button>
+
                         {/* Top animation area */}
                         <div className="relative h-64 sm:h-72 md:h-80">
-                            {/* soft neutral background blobs */}
                             <div className="absolute inset-0">
                                 <motion.div
                                     className="absolute -left-24 top-10 h-64 w-64 rounded-full bg-black/10 blur-3xl dark:bg-white/10"
@@ -461,19 +606,16 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                             <stop offset="58%" stopColor="#FBCFE8" stopOpacity="0.95" />
                                             <stop offset="100%" stopColor="#FB7185" stopOpacity="0.95" />
                                         </radialGradient>
-
                                         <radialGradient id="petalCoral" cx="35%" cy="30%" r="70%">
                                             <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
                                             <stop offset="62%" stopColor="#FED7AA" stopOpacity="0.95" />
                                             <stop offset="100%" stopColor="#FB923C" stopOpacity="0.95" />
                                         </radialGradient>
-
                                         <radialGradient id="centerWarm" cx="35%" cy="30%" r="70%">
                                             <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.98" />
                                             <stop offset="55%" stopColor="#FDBA74" stopOpacity="0.95" />
                                             <stop offset="100%" stopColor="#F43F5E" stopOpacity="0.92" />
                                         </radialGradient>
-
                                         <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
                                             <feGaussianBlur stdDeviation="6" result="blur" />
                                             <feMerge>
@@ -557,12 +699,12 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                             transition={{ duration: D, times: [0, 0.75, 1], ease: [0.16, 1, 0.3, 1] }}
                                         >
                                             {[
-                                                { rot: 0, delay: 0.10, fill: "url(#petalPink)" },
+                                                { rot: 0, delay: 0.1, fill: "url(#petalPink)" },
                                                 { rot: 60, delay: 0.16, fill: "url(#petalCoral)" },
                                                 { rot: 120, delay: 0.22, fill: "url(#petalPink)" },
                                                 { rot: 180, delay: 0.28, fill: "url(#petalCoral)" },
                                                 { rot: 240, delay: 0.34, fill: "url(#petalPink)" },
-                                                { rot: 300, delay: 0.40, fill: "url(#petalCoral)" },
+                                                { rot: 300, delay: 0.4, fill: "url(#petalCoral)" },
                                             ].map((p) => (
                                                 <motion.path
                                                     key={p.rot}
@@ -573,8 +715,13 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                              C166 140, 162 112, 140 96 Z"
                                                     fill={p.fill}
                                                     style={{ transformOrigin: "140px 150px" }}
-                                                    initial={{ rotate: p.rot, scale: 0.10, opacity: 0, y: 14 }}
-                                                    animate={{ rotate: p.rot, y: [14, -2, 0], scale: [0.10, 1.08, 1.0], opacity: [0, 1, 1] }}
+                                                    initial={{ rotate: p.rot, scale: 0.1, opacity: 0, y: 14 }}
+                                                    animate={{
+                                                        rotate: p.rot,
+                                                        y: [14, -2, 0],
+                                                        scale: [0.1, 1.08, 1.0],
+                                                        opacity: [0, 1, 1],
+                                                    }}
                                                     transition={{ duration: D, delay: p.delay, times: [0, 0.72, 1], ease: [0.16, 1, 0.3, 1] }}
                                                 />
                                             ))}
@@ -607,14 +754,20 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
 
                         {/* Bottom text area */}
                         <div className="p-5 sm:p-6 md:p-7">
-                            <div className="text-lg font-semibold tracking-tight sm:text-xl md:text-2xl">{title}</div>
-                            <div className="mt-3 text-base leading-relaxed text-neutral-700 dark:text-neutral-200 sm:text-lg md:text-xl">
-                                {body}
+                            <div className="text-center">
+                                <div className="text-lg font-semibold tracking-tight sm:text-xl md:text-2xl text-balance">{title}</div>
+                                <div className="mt-3 mx-auto max-w-[34ch] text-base leading-relaxed text-neutral-700 dark:text-neutral-200 sm:text-lg md:text-xl">
+                                    {body}
+                                </div>
                             </div>
 
                             {tip ? (
-                                <div className="mt-5 rounded-2xl border border-black/5 bg-black/5 p-4 text-base leading-relaxed text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300 sm:text-lg">
-                                    {tip}
+                                <div className="mt-5 mx-auto max-w-[38ch] rounded-2xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-full text-center text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">
+                                            {tip}
+                                        </div>
+                                    </div>
                                 </div>
                             ) : null}
                         </div>
@@ -644,6 +797,43 @@ function SoftCard({ children, className = "" }) {
     );
 }
 
+function TapButton({ onPress, disabled, className, children, type = "button", ...rest }) {
+    const { lock, unlock } = useTapLock();
+
+    const fire = (e) => {
+        if (disabled) return;
+        if (!onPress) return;
+        if (isPrimaryPointer(e)) {
+            if (!lock()) return;
+            try {
+                onPress(e);
+            } finally {
+                setTimeout(unlock, 0);
+            }
+            return;
+        }
+        onPress(e);
+    };
+
+    return (
+        <button
+            type={type}
+            disabled={disabled}
+            onPointerUp={(e) => {
+                e.preventDefault();
+                fire(e);
+            }}
+            onClick={(e) => {
+                fire(e);
+            }}
+            className={["touch-manipulation select-none", className].join(" ")}
+            {...rest}
+        >
+            {children}
+        </button>
+    );
+}
+
 function Pill({ children, active, onClick, className = "", disabled = false }) {
     return (
         <button
@@ -652,6 +842,7 @@ function Pill({ children, active, onClick, className = "", disabled = false }) {
             className={[
                 "rounded-2xl px-3 py-2 font-medium transition",
                 "text-xs sm:text-sm",
+                "whitespace-nowrap shrink-0",
                 "active:scale-[0.99]",
                 disabled ? "opacity-40" : "opacity-100",
                 active
@@ -667,8 +858,8 @@ function Pill({ children, active, onClick, className = "", disabled = false }) {
 
 function PrimaryButton({ children, onClick, disabled = false, className = "" }) {
     return (
-        <button
-            onClick={onClick}
+        <TapButton
+            onPress={onClick}
             disabled={disabled}
             className={[
                 "w-full rounded-2xl px-4 py-3 sm:py-3.5",
@@ -681,14 +872,14 @@ function PrimaryButton({ children, onClick, disabled = false, className = "" }) 
             ].join(" ")}
         >
             {children}
-        </button>
+        </TapButton>
     );
 }
 
 function SecondaryButton({ children, onClick, disabled = false, className = "" }) {
     return (
-        <button
-            onClick={onClick}
+        <TapButton
+            onPress={onClick}
             disabled={disabled}
             className={[
                 "w-full rounded-2xl px-4 py-3 sm:py-3.5",
@@ -701,28 +892,53 @@ function SecondaryButton({ children, onClick, disabled = false, className = "" }
             ].join(" ")}
         >
             {children}
-        </button>
+        </TapButton>
     );
 }
 
-function TopBar({ appName, tagline, canGoHome, onGoHome, onRestart, lang, setLang, theme, setTheme, t }) {
+/**
+ * TopBar:
+ * - GoHome => daily home
+ * - GoWelcome => welcome landing
+ */
+function TopBar({
+    appName,
+    tagline,
+    canGoHome,
+    onGoHome,
+    canGoWelcome,
+    onGoWelcome,
+    onRestart,
+    lang,
+    setLang,
+    theme,
+    setTheme,
+    t,
+}) {
     return (
         <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-black/5 text-lg dark:bg-white/10">✨</div>
-                <div>
-                    <div className="text-sm sm:text-base font-semibold tracking-tight">{appName}</div>
-                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{tagline}</div>
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-black/5 text-lg dark:bg-white/10 shrink-0">
+                    ✨
+                </div>
+                <div className="min-w-0">
+                    <div className="text-sm sm:text-base font-semibold tracking-tight truncate">{appName}</div>
+                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 truncate">{tagline}</div>
                 </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-nowrap shrink-0">
+                {canGoWelcome && (
+                    <Pill onClick={onGoWelcome} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
+                        {t("nav.welcome")}
+                    </Pill>
+                )}
                 {canGoHome && (
-                    <Pill onClick={onGoHome} active={false}>
+                    <Pill onClick={onGoHome} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
                         {t("nav.home")}
                     </Pill>
                 )}
-                <Pill onClick={onRestart} active={false}>
+                <Pill onClick={onRestart} active={false} className="whitespace-nowrap max-[360px]:text-[11px]">
                     {t("nav.restart")}
                 </Pill>
             </div>
@@ -735,12 +951,16 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
         <div className="space-y-4 sm:space-y-5">
             <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="text-base sm:text-lg font-semibold tracking-tight">{t("welcome.title")}</div>
-                <div className="mt-1 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("welcome.subtitle")}</div>
+                <div className="mt-1 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">
+                    {t("welcome.subtitle")}
+                </div>
 
                 <div className="mt-5">
                     <div className="flex items-end justify-between">
                         <div>
-                            <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("welcome.goalLabel")}</div>
+                            <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">
+                                {t("welcome.goalLabel")}
+                            </div>
                             <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{t("welcome.goalHint")}</div>
                         </div>
                     </div>
@@ -749,9 +969,9 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
                         {GOALS.map((g) => {
                             const active = goalId === g.id;
                             return (
-                                <button
+                                <TapButton
                                     key={g.id}
-                                    onClick={() => onPickGoal(g.id)}
+                                    onPress={() => onPickGoal(g.id)}
                                     className={[
                                         "rounded-3xl p-4 md:p-5 text-left transition active:scale-[0.99]",
                                         "border",
@@ -762,14 +982,16 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
                                 >
                                     <div className="text-lg sm:text-xl">{g.emoji}</div>
                                     <div className="mt-2 text-sm sm:text-base font-semibold tracking-tight">{t(`goals.${g.id}`)}</div>
-                                </button>
+                                </TapButton>
                             );
                         })}
                     </div>
                 </div>
 
                 <div className="mt-5">
-                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("welcome.oneLineLabel")}</label>
+                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">
+                        {t("welcome.oneLineLabel")}
+                    </label>
                     <input
                         value={goalText}
                         onChange={(e) => onGoalText(e.target.value)}
@@ -792,7 +1014,9 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
 
             <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="text-sm sm:text-base font-semibold tracking-tight">{t("welcome.noteTitle")}</div>
-                <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("welcome.noteBody")}</div>
+                <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">
+                    {t("welcome.noteBody")}
+                </div>
             </SoftCard>
 
             <SoftFooter lang={lang} />
@@ -818,7 +1042,9 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
             <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-center justify-between">
                     <div className="text-sm sm:text-base font-semibold tracking-tight">{t("quiz.title")}</div>
-                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{t("quiz.progress", { x: quizIndex + 1, n: QUIZ.length })}</div>
+                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+                        {t("quiz.progress", { x: quizIndex + 1, n: QUIZ.length })}
+                    </div>
                 </div>
 
                 <div className="mt-4 text-base sm:text-lg font-semibold tracking-tight">{title}</div>
@@ -828,9 +1054,9 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
                         const optText = QUIZ_TEXT[lang]?.[opt.textKey] || opt.textKey;
                         const active = opt.id === currentOptId;
                         return (
-                            <button
+                            <TapButton
                                 key={opt.id}
-                                onClick={() => onPick(q, opt.id)}
+                                onPress={() => onPick(q, opt.id)}
                                 className={[
                                     "w-full rounded-3xl px-4 py-3 sm:py-3.5 text-left transition active:scale-[0.99]",
                                     "text-sm sm:text-base",
@@ -841,7 +1067,7 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
                                 ].join(" ")}
                             >
                                 {optText}
-                            </button>
+                            </TapButton>
                         );
                     })}
                 </div>
@@ -855,12 +1081,12 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
                     </PrimaryButton>
                 </div>
 
-                <button
-                    onClick={onExit}
+                <TapButton
+                    onPress={onExit}
                     className="mt-4 w-full text-center text-xs sm:text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300"
                 >
                     {t("quiz.exit")}
-                </button>
+                </TapButton>
             </SoftCard>
         </div>
     );
@@ -874,12 +1100,16 @@ function Result({ goal, goalText, profile, onGoHome, onBackQuiz, t }) {
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 md:gap-4">
                     <div className="rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
-                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("result.archetypeTitle")}</div>
+                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">
+                            {t("result.archetypeTitle")}
+                        </div>
                         <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">{t(`archetype.${profile.archetype}`)}</div>
                     </div>
 
                     <div className="rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
-                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("result.elementTitle")}</div>
+                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">
+                            {t("result.elementTitle")}
+                        </div>
                         <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">
                             {ELEMENT_BADGE[profile.element]} {t(`element.${profile.element}`)}
                         </div>
@@ -896,7 +1126,9 @@ function Result({ goal, goalText, profile, onGoHome, onBackQuiz, t }) {
                     <div className="mt-1 text-sm sm:text-base font-semibold tracking-tight">
                         {goal ? `${goal.emoji} ${t(`goals.${goal.id}`)}` : t("result.goalEmpty")}
                     </div>
-                    {goalText ? <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">“{goalText}”</div> : null}
+                    {goalText ? (
+                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">“{goalText}”</div>
+                    ) : null}
                 </div>
 
                 <div className="mt-5 flex gap-2">
@@ -913,6 +1145,8 @@ function Result({ goal, goalText, profile, onGoHome, onBackQuiz, t }) {
 }
 
 function Home({
+    isReady,
+    onStartQuiz,
     goal,
     goalText,
     profile,
@@ -926,9 +1160,26 @@ function Home({
     onEvidenceText,
     onDone,
     onOpenWall,
-    onOpenProgress,
     t,
+    lang,
 }) {
+    if (!isReady) {
+        // Warm gate — only show when user hasn't completed onboarding quiz
+        return (
+            <div className="space-y-4 sm:space-y-5">
+                <SoftCard className="p-4 sm:p-5 md:p-6">
+                    <div className="text-base sm:text-lg font-semibold tracking-tight">{t("todayGate.title")}</div>
+                    <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">
+                        {t("todayGate.body")}
+                    </div>
+                    <div className="mt-4">
+                        <PrimaryButton onClick={onStartQuiz}>{t("todayGate.cta")}</PrimaryButton>
+                    </div>
+                </SoftCard>
+            </div>
+        );
+    }
+
     if (!goal || !dailyContent) {
         return (
             <SoftCard className="p-4 sm:p-5 md:p-6">
@@ -951,7 +1202,7 @@ function Home({
 
                     <div className="rounded-3xl border border-black/5 bg-black/5 px-3 py-2 text-right dark:border-white/10 dark:bg-white/5">
                         <div className="text-[11px] sm:text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.streak")}</div>
-                        <div className="text-lg sm:text-xl font-semibold tracking-tight">{streak} 🔥</div>
+                        <div className="text-lg sm:text-xl font-semibold tracking-tight">{streak}</div>
                     </div>
                 </div>
 
@@ -1006,10 +1257,7 @@ function Home({
                         {todayDone ? t("home.doneDone") : t("home.done")}
                     </PrimaryButton>
 
-                    <div className="grid grid-cols-2 gap-2">
-                        <SecondaryButton onClick={onOpenWall}>{t("home.openEvidence")}</SecondaryButton>
-                        <SecondaryButton onClick={onOpenProgress}>{t("home.openProgress")}</SecondaryButton>
-                    </div>
+                    <SecondaryButton onClick={onOpenWall}>{t("home.openEvidence")}</SecondaryButton>
                 </div>
             </SoftCard>
 
@@ -1020,9 +1268,8 @@ function Home({
     );
 }
 
-function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
+function EvidenceWall({ evidence, streak, doneCount, evidenceCount, goalLabels, moodsMap, onBack, t }) {
     const [filterGoal, setFilterGoal] = useState("all");
-
     const goalsForFilter = useMemo(() => [{ id: "all" }, ...Object.keys(goalLabels).map((id) => ({ id }))], [goalLabels]);
 
     const filtered = useMemo(() => {
@@ -1039,6 +1286,26 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
                         <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("evidence.subtitle")}</div>
                     </div>
                     <Pill onClick={onBack}>{t("nav.back")}</Pill>
+                </div>
+
+                {/* ✅ Progress summary table */}
+                <div className="mt-4 overflow-hidden rounded-3xl border border-black/5 bg-black/5 dark:border-white/10 dark:bg-white/5">
+                    <table className="w-full text-sm sm:text-base">
+                        <tbody>
+                            <tr className="border-b border-black/5 dark:border-white/10">
+                                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t("progress.streak")}</td>
+                                <td className="px-4 py-3 text-right font-semibold">{streak}</td>
+                            </tr>
+                            <tr className="border-b border-black/5 dark:border-white/10">
+                                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t("progress.daysDone")}</td>
+                                <td className="px-4 py-3 text-right font-semibold">{doneCount}</td>
+                            </tr>
+                            <tr>
+                                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t("progress.evidenceCount")}</td>
+                                <td className="px-4 py-3 text-right font-semibold">{evidenceCount}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -1063,55 +1330,24 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
                         filtered.map((e, idx) => {
                             const g = goalLabels[e.goalId];
                             return (
-                                <div key={`${e.date}-${idx}`} className="rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                                <div
+                                    key={`${e.date}-${idx}`}
+                                    className="rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5"
+                                >
                                     <div className="flex items-center justify-between">
                                         <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{e.date}</div>
                                         <div className="text-sm sm:text-base">{moodsMap[e.mood] || "🙂"}</div>
                                     </div>
                                     <div className="mt-2 text-sm sm:text-base leading-relaxed">{e.text}</div>
-                                    <div className="mt-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{g ? `${g.emoji} ${g.label}` : ""}</div>
+                                    <div className="mt-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+                                        {g ? `${g.emoji} ${g.label}` : ""}
+                                    </div>
                                 </div>
                             );
                         })
                     )}
                 </div>
             </SoftCard>
-        </div>
-    );
-}
-
-function Progress({ streak, doneCount, evidenceCount, onBack, t }) {
-    return (
-        <div className="space-y-4 sm:space-y-5">
-            <SoftCard className="p-4 sm:p-5 md:p-6">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("progress.title")}</div>
-                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("progress.subtitle")}</div>
-                    </div>
-                    <Pill onClick={onBack}>{t("nav.back")}</Pill>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-3 md:gap-4">
-                    <Stat title={t("progress.streak")} value={`${streak} 🔥`} />
-                    <Stat title={t("progress.daysDone")} value={`${doneCount}`} />
-                    <Stat title={t("progress.evidenceCount")} value={`${evidenceCount}`} />
-                </div>
-
-                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-sm sm:text-base font-semibold tracking-tight">{t("progress.milestonesTitle")}</div>
-                    <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("progress.milestonesBody")}</div>
-                </div>
-            </SoftCard>
-        </div>
-    );
-}
-
-function Stat({ title, value }) {
-    return (
-        <div className="rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
-            <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{title}</div>
-            <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">{value}</div>
         </div>
     );
 }
@@ -1175,11 +1411,16 @@ function Section({ title, children }) {
     );
 }
 
+/**
+ * BottomNav:
+ * - remove progress tab
+ * - add welcome tab at far-left
+ */
 function BottomNav({ current, onGo, isReady, t }) {
     const items = [
-        { id: "home", label: t("nav.today"), emoji: "🏠" },
-        { id: "wall", label: t("nav.evidence"), emoji: "🧱" },
-        { id: "progress", label: t("nav.progress"), emoji: "📈" },
+        { id: "welcome", label: t("nav.welcome"), emoji: "🏡" },
+        { id: "home", label: t("nav.today"), emoji: "☀️" },
+        { id: "wall", label: t("nav.journey"), emoji: "🖼️" },
         { id: "settings", label: t("nav.settings"), emoji: "⚙️" },
     ];
 
@@ -1190,9 +1431,9 @@ function BottomNav({ current, onGo, isReady, t }) {
                     {items.map((it) => {
                         const active = current === it.id;
                         return (
-                            <button
+                            <TapButton
                                 key={it.id}
-                                onClick={() => onGo(it.id)}
+                                onPress={() => onGo(it.id)}
                                 className={[
                                     "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 sm:py-2.5 transition active:scale-[0.99]",
                                     "text-xs sm:text-sm",
@@ -1203,7 +1444,7 @@ function BottomNav({ current, onGo, isReady, t }) {
                             >
                                 <div className="text-base sm:text-lg">{it.emoji}</div>
                                 <div className="text-[11px] sm:text-xs font-medium">{it.label}</div>
-                            </button>
+                            </TapButton>
                         );
                     })}
                 </div>
