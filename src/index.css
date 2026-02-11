@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Tailwind v4: enable class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+    color-scheme: light dark;
+}
+
+:root {
+    --sa-top: env(safe-area-inset-top, 0px);
+    --sa-right: env(safe-area-inset-right, 0px);
+    --sa-bottom: env(safe-area-inset-bottom, 0px);
+    --sa-left: env(safe-area-inset-left, 0px);
+}
