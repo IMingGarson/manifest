@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AFFIRMATIONS, ELEMENT_BADGE, GOALS, I18N, MICRO_ACTIONS, QUIZ, QUIZ_TEXT } from "./constants/index.js";
 
 const TRANSITION_MS = 4000;
@@ -29,16 +29,11 @@ function usePersistedState(key, initialValue) {
  * ----------------------------------------------------------------------------
  * Theme: light / dark / system
  * ----------------------------------------------------------------------------
- * Tailwind dark mode uses 'dark' class on <html>.
- * - light: remove 'dark'
- * - dark: add 'dark'
- * - system: remove explicit control; apply based on matchMedia changes
  */
 function applyTheme(theme) {
     const root = document.documentElement;
     root.classList.remove("dark");
     if (theme === "dark") root.classList.add("dark");
-    // if system, do nothing here; we’ll handle via listener.
 }
 function useTheme(theme) {
     useEffect(() => {
@@ -109,7 +104,6 @@ export default function Page() {
     const [quizIndex, setQuizIndex] = usePersistedState("mvp_quizIndex", 0);
     const [picked, setPicked] = usePersistedState("mvp_quizPicked", {}); // qid -> optionId
 
-    // Mock-ish persistence (but “real” UX): keep progress locally
     const [doneDatesArr, setDoneDatesArr] = usePersistedState("mvp_doneDates", []);
     const [streak, setStreak] = usePersistedState("mvp_streak", 0);
     const [evidence, setEvidence] = usePersistedState("mvp_evidence", []);
@@ -124,6 +118,16 @@ export default function Page() {
         if (!Array.isArray(list) || list.length === 0) return null;
         return pickOne(list, `${todayKey()}|${autoModal.key}|${lang}`);
     }, [autoModal.open, autoModal.key, lang, dict]);
+
+    const transitionTimerRef = useRef(null);
+    useEffect(() => {
+        return () => {
+            if (transitionTimerRef.current) {
+                clearTimeout(transitionTimerRef.current);
+                transitionTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const doneDates = useMemo(() => new Set(doneDatesArr), [doneDatesArr]);
     const todayDone = doneDates.has(todayKey());
@@ -149,15 +153,22 @@ export default function Page() {
         const seed = `${todayKey()}|${goalId}|${profile.element}|${profile.archetype}|${lang}`;
         const affs = AFFIRMATIONS[goalId]?.[profile.element] || [];
         const acts = MICRO_ACTIONS[goalId]?.[profile.element] || [];
-        const aff = affs.length ? pickOne(affs, seed + "|aff")[lang] : (lang === "en" ? "I take one small step today." : "我今天往前一步就好。");
-        const act = acts.length ? pickOne(acts, seed + "|act")[lang] : (lang === "en" ? "Do a 5-minute action that supports you." : "做一個 5 分鐘的小行動照顧自己。");
+        const aff = affs.length
+            ? pickOne(affs, seed + "|aff")[lang]
+            : lang === "en"
+                ? "I take one small step today."
+                : "我今天往前一步就好。";
+        const act = acts.length
+            ? pickOne(acts, seed + "|act")[lang]
+            : lang === "en"
+                ? "Do a 5-minute action that supports you."
+                : "做一個 5 分鐘的小行動照顧自己。";
         return { affirmation: aff, action: act };
     }, [goalId, profile.element, profile.archetype, lang]);
 
-    // If user already completed setup before, land on Home for better UX
     useEffect(() => {
         if (goalId && answers.length === QUIZ.length && view === "welcome") {
-            // keep user in welcome if they intentionally came back; otherwise can auto route later.
+            // keep user in welcome if they intentionally came back
         }
     }, [goalId, answers.length, view]);
 
@@ -171,11 +182,6 @@ export default function Page() {
         setEvidence([]);
         setTodayMood("happy");
         setTodayEvidenceText("");
-    }
-
-    function startQuiz() {
-        if (!goalId) return;
-        setView("quiz");
     }
 
     function onPickQuizOption(q, optId) {
@@ -204,7 +210,6 @@ export default function Page() {
         newDone.add(k);
         setDoneDatesArr(Array.from(newDone));
 
-        // streak logic: if yesterday done => +1 else reset to 1
         const d = new Date();
         d.setDate(d.getDate() - 1);
         const yk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -220,7 +225,6 @@ export default function Page() {
         };
         setEvidence((ev) => [entry, ...ev]);
 
-        // clear input for next day
         setTodayEvidenceText("");
     }
 
@@ -235,21 +239,37 @@ export default function Page() {
         [lang] // eslint-disable-line
     );
 
-    // Apple-like soft UI tokens (Tailwind only)
-    // - More whitespace, subtle borders, blur, rounded, calm typography
+    /**
+     * ----------------------------------------------------------------------------
+     * Responsive baseline (phones -> tablets)
+     * - iPhone 12+ / Android: comfortable 15~16px base
+     * - tablets: slightly larger typography + more padding
+     *
+     * We do it via Tailwind responsive classes (no config change required).
+     * ----------------------------------------------------------------------------
+     */
     return (
-        <div className="min-h-dvh bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50">
+        <div
+            className={[
+                "min-h-dvh bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50",
+                // baseline type scale
+                "text-[15px] sm:text-[16px] lg:text-[17px]",
+                // better tap behavior on mobile
+                "antialiased",
+            ].join(" ")}
+        >
             {/* top safe padding / centered container */}
             <div
                 className={[
-                    "mx-auto w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-3xl",
-                    // base padding
-                    "px-4 sm:px-6",
+                    // width
+                    "mx-auto w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl",
+                    // horizontal padding (phones -> tablets)
+                    "px-4 sm:px-6 md:px-8",
                     // SAFE AREA: top/left/right
-                    "pt-[calc(1.5rem+var(--sa-top))]",
+                    "pt-[calc(1.25rem+var(--sa-top))] sm:pt-[calc(1.5rem+var(--sa-top))] md:pt-[calc(1.75rem+var(--sa-top))]",
                     "pl-[calc(1rem+var(--sa-left))] pr-[calc(1rem+var(--sa-right))]",
-                    // SAFE AREA: bottom + reserve space for BottomNav
-                    "pb-[calc(6.5rem+var(--sa-bottom))]",
+                    // SAFE AREA: bottom + reserve space for BottomNav (a bit more on tablets)
+                    "pb-[calc(6.75rem+var(--sa-bottom))] sm:pb-[calc(7.25rem+var(--sa-bottom))] md:pb-[calc(7.75rem+var(--sa-bottom))]",
                 ].join(" ")}
             >
                 <TopBar
@@ -268,7 +288,7 @@ export default function Page() {
                     t={t}
                 />
 
-                <div className="mt-5">
+                <div className="mt-5 sm:mt-6 md:mt-7">
                     {view === "welcome" && (
                         <Welcome
                             goalId={goalId}
@@ -277,10 +297,18 @@ export default function Page() {
                             onGoalText={setGoalText}
                             onContinue={() => {
                                 if (!goalId) return;
+
+                                if (transitionTimerRef.current) {
+                                    clearTimeout(transitionTimerRef.current);
+                                    transitionTimerRef.current = null;
+                                }
+
                                 setAutoModal({ open: true, key: "start" });
-                                setTimeout(() => {
+
+                                transitionTimerRef.current = setTimeout(() => {
                                     setAutoModal({ open: false, key: null });
                                     setView("quiz");
+                                    transitionTimerRef.current = null;
                                 }, TRANSITION_MS);
                             }}
                             t={t}
@@ -302,14 +330,7 @@ export default function Page() {
                     )}
 
                     {view === "result" && (
-                        <Result
-                            goal={goal}
-                            goalText={goalText}
-                            profile={profile}
-                            onGoHome={() => setView("home")}
-                            onBackQuiz={() => setView("quiz")}
-                            t={t}
-                        />
+                        <Result goal={goal} goalText={goalText} profile={profile} onGoHome={() => setView("home")} onBackQuiz={() => setView("quiz")} t={t} />
                     )}
 
                     {view === "home" && (
@@ -359,16 +380,10 @@ export default function Page() {
                     )}
 
                     {view === "settings" && (
-                        <Settings
-                            lang={lang}
-                            setLang={setLang}
-                            theme={theme}
-                            setTheme={setTheme}
-                            onBack={() => setView("welcome")}
-                            t={t}
-                        />
+                        <Settings lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} onBack={() => setView("welcome")} t={t} />
                     )}
                 </div>
+
                 <AutoTransitionModal
                     open={autoModal.open && !!autoModalVariant}
                     title={autoModalVariant?.title}
@@ -378,12 +393,7 @@ export default function Page() {
                     durationMs={TRANSITION_MS}
                 />
 
-                <BottomNav
-                    current={view}
-                    onGo={safeGo}
-                    isReady={goalId && answers.length === QUIZ.length}
-                    t={t}
-                />
+                <BottomNav current={view} onGo={safeGo} isReady={goalId && answers.length === QUIZ.length} t={t} />
             </div>
         </div>
     );
@@ -396,7 +406,7 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
         <AnimatePresence>
             {open ? (
                 <motion.div
-                    className="fixed inset-0 z-50 grid place-items-center p-4"
+                    className="fixed inset-0 z-50 grid place-items-center p-4 sm:p-6"
                     role="dialog"
                     aria-modal="true"
                     initial={{ opacity: 0 }}
@@ -414,7 +424,7 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                     {/* panel - taller portrait card */}
                     <motion.div
                         className={[
-                            "relative w-full max-w-sm sm:max-w-md",
+                            "relative w-full max-w-sm sm:max-w-md md:max-w-lg",
                             "overflow-hidden rounded-[36px]",
                             "border border-black/10 bg-white/92 shadow-2xl backdrop-blur-xl",
                             "ring-1 ring-black/10",
@@ -426,7 +436,7 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                         transition={{ duration: 0.22, ease: "easeOut" }}
                     >
                         {/* Top animation area */}
-                        <div className="relative h-72 sm:h-80">
+                        <div className="relative h-64 sm:h-72 md:h-80">
                             {/* soft neutral background blobs */}
                             <div className="absolute inset-0">
                                 <motion.div
@@ -446,17 +456,16 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                             <div className="absolute inset-0 grid place-items-center">
                                 <svg width="280" height="280" viewBox="0 0 280 280" className="opacity-95">
                                     <defs>
-                                        {/* FIXED-COLOR gradients (not affected by light/dark mode) */}
                                         <radialGradient id="petalPink" cx="35%" cy="30%" r="70%">
                                             <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
-                                            <stop offset="58%" stopColor="#FBCFE8" stopOpacity="0.95" /> {/* pink */}
-                                            <stop offset="100%" stopColor="#FB7185" stopOpacity="0.95" /> {/* rose */}
+                                            <stop offset="58%" stopColor="#FBCFE8" stopOpacity="0.95" />
+                                            <stop offset="100%" stopColor="#FB7185" stopOpacity="0.95" />
                                         </radialGradient>
 
                                         <radialGradient id="petalCoral" cx="35%" cy="30%" r="70%">
                                             <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
-                                            <stop offset="62%" stopColor="#FED7AA" stopOpacity="0.95" /> {/* light orange */}
-                                            <stop offset="100%" stopColor="#FB923C" stopOpacity="0.95" /> {/* orange */}
+                                            <stop offset="62%" stopColor="#FED7AA" stopOpacity="0.95" />
+                                            <stop offset="100%" stopColor="#FB923C" stopOpacity="0.95" />
                                         </radialGradient>
 
                                         <radialGradient id="centerWarm" cx="35%" cy="30%" r="70%">
@@ -474,7 +483,6 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                         </filter>
                                     </defs>
 
-                                    {/* warm halo */}
                                     <motion.circle
                                         cx="140"
                                         cy="140"
@@ -489,7 +497,6 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                         transition={{ duration: D, times: [0, 0.55, 1], ease: "easeInOut" }}
                                     />
 
-                                    {/* sparkles */}
                                     <motion.g
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: [0, 0, 1, 0] }}
@@ -523,7 +530,7 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                             transition={{ duration: 1.15, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
                                         />
                                     </motion.g>
-                                    {/* bud shell (closed) -> fades out */}
+
                                     <motion.path
                                         d="M140 98
                        C120 114, 112 132, 120 154
@@ -537,30 +544,18 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                                         transition={{ duration: D, times: [0, 0.35, 0.72], ease: "easeInOut" }}
                                     />
 
-                                    {/* OUTER wobble group (starts after bloom) */}
                                     <motion.g
                                         style={{ transformOrigin: "140px 150px" }}
                                         initial={{ rotate: 0, y: 0 }}
                                         animate={{ rotate: [0, -2.4, 2.4, -1.8, 1.8, 0], y: [0, 2, -2, 1.4, -1.4, 0] }}
-                                        transition={{
-                                            duration: 1.6,
-                                            repeat: Infinity,
-                                            ease: "easeInOut",
-                                            delay: 0.9, // wobble starts after opening
-                                        }}
+                                        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut", delay: 0.9 }}
                                     >
-                                        {/* INNER bloom group (one-time) */}
                                         <motion.g
                                             style={{ transformOrigin: "140px 150px" }}
                                             initial={{ scale: 0.68, opacity: 0 }}
                                             animate={{ scale: [0.68, 1.02, 1.0], opacity: [0, 1, 1] }}
-                                            transition={{
-                                                duration: D,
-                                                times: [0, 0.75, 1],
-                                                ease: [0.16, 1, 0.3, 1],
-                                            }}
+                                            transition={{ duration: D, times: [0, 0.75, 1], ease: [0.16, 1, 0.3, 1] }}
                                         >
-                                            {/* petals */}
                                             {[
                                                 { rot: 0, delay: 0.10, fill: "url(#petalPink)" },
                                                 { rot: 60, delay: 0.16, fill: "url(#petalCoral)" },
@@ -578,28 +573,12 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                              C166 140, 162 112, 140 96 Z"
                                                     fill={p.fill}
                                                     style={{ transformOrigin: "140px 150px" }}
-                                                    initial={{
-                                                        rotate: p.rot,
-                                                        scale: 0.10,
-                                                        opacity: 0,
-                                                        y: 14, // tucked in
-                                                    }}
-                                                    animate={{
-                                                        rotate: p.rot,
-                                                        y: [14, -2, 0], // open upward then settle
-                                                        scale: [0.10, 1.08, 1.0],
-                                                        opacity: [0, 1, 1],
-                                                    }}
-                                                    transition={{
-                                                        duration: D,
-                                                        delay: p.delay,
-                                                        times: [0, 0.72, 1],
-                                                        ease: [0.16, 1, 0.3, 1],
-                                                    }}
+                                                    initial={{ rotate: p.rot, scale: 0.10, opacity: 0, y: 14 }}
+                                                    animate={{ rotate: p.rot, y: [14, -2, 0], scale: [0.10, 1.08, 1.0], opacity: [0, 1, 1] }}
+                                                    transition={{ duration: D, delay: p.delay, times: [0, 0.72, 1], ease: [0.16, 1, 0.3, 1] }}
                                                 />
                                             ))}
 
-                                            {/* center */}
                                             <motion.circle
                                                 cx="140"
                                                 cy="150"
@@ -627,14 +606,14 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
                         </div>
 
                         {/* Bottom text area */}
-                        <div className="p-6 sm:p-7">
-                            <div className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</div>
-                            <div className="mt-3 text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 sm:text-xl">
+                        <div className="p-5 sm:p-6 md:p-7">
+                            <div className="text-lg font-semibold tracking-tight sm:text-xl md:text-2xl">{title}</div>
+                            <div className="mt-3 text-base leading-relaxed text-neutral-700 dark:text-neutral-200 sm:text-lg md:text-xl">
                                 {body}
                             </div>
 
                             {tip ? (
-                                <div className="mt-5 rounded-2xl border border-black/5 bg-black/5 p-4 text-lg leading-relaxed text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300">
+                                <div className="mt-5 rounded-2xl border border-black/5 bg-black/5 p-4 text-base leading-relaxed text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300 sm:text-lg">
                                     {tip}
                                 </div>
                             ) : null}
@@ -647,7 +626,7 @@ function AutoTransitionModal({ open, title, body, tip, t, durationMs = 1500 }) {
 }
 
 /* ----------------------------------------------------------------------------
- * UI Components — Apple-like softness (blur, subtle borders, calm typography)
+ * UI Components
  * ----------------------------------------------------------------------------
  */
 
@@ -671,7 +650,8 @@ function Pill({ children, active, onClick, className = "", disabled = false }) {
             onClick={onClick}
             disabled={disabled}
             className={[
-                "rounded-2xl px-3 py-2 text-xs font-medium transition",
+                "rounded-2xl px-3 py-2 font-medium transition",
+                "text-xs sm:text-sm",
                 "active:scale-[0.99]",
                 disabled ? "opacity-40" : "opacity-100",
                 active
@@ -691,7 +671,8 @@ function PrimaryButton({ children, onClick, disabled = false, className = "" }) 
             onClick={onClick}
             disabled={disabled}
             className={[
-                "w-full rounded-2xl px-4 py-3 text-sm font-semibold",
+                "w-full rounded-2xl px-4 py-3 sm:py-3.5",
+                "text-sm sm:text-base font-semibold",
                 "transition active:scale-[0.99]",
                 disabled
                     ? "bg-black/10 text-neutral-400 dark:bg-white/10 dark:text-neutral-500"
@@ -710,7 +691,8 @@ function SecondaryButton({ children, onClick, disabled = false, className = "" }
             onClick={onClick}
             disabled={disabled}
             className={[
-                "w-full rounded-2xl px-4 py-3 text-sm font-semibold",
+                "w-full rounded-2xl px-4 py-3 sm:py-3.5",
+                "text-sm sm:text-base font-semibold",
                 "border border-black/10 bg-black/5 text-neutral-900 hover:bg-black/10",
                 "dark:border-white/10 dark:bg-white/5 dark:text-neutral-100 dark:hover:bg-white/10",
                 "transition active:scale-[0.99]",
@@ -727,12 +709,10 @@ function TopBar({ appName, tagline, canGoHome, onGoHome, onRestart, lang, setLan
     return (
         <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-black/5 text-lg dark:bg-white/10">
-                    ✨
-                </div>
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-black/5 text-lg dark:bg-white/10">✨</div>
                 <div>
-                    <div className="text-sm font-semibold tracking-tight">{appName}</div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">{tagline}</div>
+                    <div className="text-sm sm:text-base font-semibold tracking-tight">{appName}</div>
+                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{tagline}</div>
                 </div>
             </div>
 
@@ -752,24 +732,20 @@ function TopBar({ appName, tagline, canGoHome, onGoHome, onRestart, lang, setLan
 
 function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang }) {
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
-                <div className="text-base font-semibold tracking-tight">{t("welcome.title")}</div>
-                <div className="mt-1 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-                    {t("welcome.subtitle")}
-                </div>
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
+                <div className="text-base sm:text-lg font-semibold tracking-tight">{t("welcome.title")}</div>
+                <div className="mt-1 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("welcome.subtitle")}</div>
 
                 <div className="mt-5">
                     <div className="flex items-end justify-between">
                         <div>
-                            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                                {t("welcome.goalLabel")}
-                            </div>
-                            <div className="text-xs text-neutral-500 dark:text-neutral-400">{t("welcome.goalHint")}</div>
+                            <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("welcome.goalLabel")}</div>
+                            <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{t("welcome.goalHint")}</div>
                         </div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
                         {GOALS.map((g) => {
                             const active = goalId === g.id;
                             return (
@@ -777,15 +753,15 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
                                     key={g.id}
                                     onClick={() => onPickGoal(g.id)}
                                     className={[
-                                        "rounded-3xl p-4 text-left transition active:scale-[0.99]",
+                                        "rounded-3xl p-4 md:p-5 text-left transition active:scale-[0.99]",
                                         "border",
                                         active
                                             ? "border-black/10 bg-black/5 dark:border-white/15 dark:bg-white/10"
                                             : "border-black/5 bg-white/60 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10",
                                     ].join(" ")}
                                 >
-                                    <div className="text-lg">{g.emoji}</div>
-                                    <div className="mt-2 text-sm font-semibold tracking-tight">{t(`goals.${g.id}`)}</div>
+                                    <div className="text-lg sm:text-xl">{g.emoji}</div>
+                                    <div className="mt-2 text-sm sm:text-base font-semibold tracking-tight">{t(`goals.${g.id}`)}</div>
                                 </button>
                             );
                         })}
@@ -793,15 +769,14 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
                 </div>
 
                 <div className="mt-5">
-                    <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                        {t("welcome.oneLineLabel")}
-                    </label>
+                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("welcome.oneLineLabel")}</label>
                     <input
                         value={goalText}
                         onChange={(e) => onGoalText(e.target.value)}
                         placeholder={t("welcome.oneLinePlaceholder")}
                         className={[
-                            "mt-2 w-full rounded-2xl px-4 py-3 text-sm outline-none",
+                            "mt-2 w-full rounded-2xl px-4 py-3 sm:py-3.5 outline-none",
+                            "text-sm sm:text-base",
                             "border border-black/10 bg-white/70 placeholder:text-neutral-400 focus:border-black/20",
                             "dark:border-white/10 dark:bg-white/5 dark:placeholder:text-neutral-500 dark:focus:border-white/25",
                         ].join(" ")}
@@ -815,11 +790,9 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
                 </div>
             </SoftCard>
 
-            <SoftCard className="p-5">
-                <div className="text-sm font-semibold tracking-tight">{t("welcome.noteTitle")}</div>
-                <div className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-                    {t("welcome.noteBody")}
-                </div>
+            <SoftCard className="p-4 sm:p-5 md:p-6">
+                <div className="text-sm sm:text-base font-semibold tracking-tight">{t("welcome.noteTitle")}</div>
+                <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("welcome.noteBody")}</div>
             </SoftCard>
 
             <SoftFooter lang={lang} />
@@ -828,33 +801,29 @@ function Welcome({ goalId, goalText, onPickGoal, onGoalText, onContinue, t, lang
 }
 
 function SoftFooter({ lang }) {
-    // Keep it minimal and production-ish; not “hint”
     const text =
         lang === "en"
             ? "This app is designed for reflection and habit-building. It does not provide medical or psychological diagnosis."
             : "本服務以自我覺察與習慣建立為主，不提供醫療或心理診斷。";
-    return <div className="px-2 text-xs leading-relaxed text-neutral-500 dark:text-neutral-500">{text}</div>;
+    return <div className="px-2 text-xs sm:text-sm leading-relaxed text-neutral-500 dark:text-neutral-500">{text}</div>;
 }
 
 function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
     const q = QUIZ[quizIndex];
     const currentOptId = picked[q.id];
-
     const title = QUIZ_TEXT[lang]?.[q.titleKey] || q.titleKey;
 
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold tracking-tight">{t("quiz.title")}</div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {t("quiz.progress", { x: quizIndex + 1, n: QUIZ.length })}
-                    </div>
+                    <div className="text-sm sm:text-base font-semibold tracking-tight">{t("quiz.title")}</div>
+                    <div className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{t("quiz.progress", { x: quizIndex + 1, n: QUIZ.length })}</div>
                 </div>
 
-                <div className="mt-4 text-base font-semibold tracking-tight">{title}</div>
+                <div className="mt-4 text-base sm:text-lg font-semibold tracking-tight">{title}</div>
 
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 space-y-2 sm:space-y-3">
                     {q.options.map((opt) => {
                         const optText = QUIZ_TEXT[lang]?.[opt.textKey] || opt.textKey;
                         const active = opt.id === currentOptId;
@@ -863,7 +832,8 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
                                 key={opt.id}
                                 onClick={() => onPick(q, opt.id)}
                                 className={[
-                                    "w-full rounded-3xl px-4 py-3 text-left text-sm transition active:scale-[0.99]",
+                                    "w-full rounded-3xl px-4 py-3 sm:py-3.5 text-left transition active:scale-[0.99]",
+                                    "text-sm sm:text-base",
                                     "border",
                                     active
                                         ? "border-black/10 bg-black/5 dark:border-white/15 dark:bg-white/10"
@@ -887,7 +857,7 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
 
                 <button
                     onClick={onExit}
-                    className="mt-4 w-full text-center text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300"
+                    className="mt-4 w-full text-center text-xs sm:text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300"
                 >
                     {t("quiz.exit")}
                 </button>
@@ -898,37 +868,35 @@ function Quiz({ quizIndex, picked, onPick, onNext, onPrev, onExit, t, lang }) {
 
 function Result({ goal, goalText, profile, onGoHome, onBackQuiz, t }) {
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
-                <div className="text-base font-semibold tracking-tight">{t("result.title")}</div>
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
+                <div className="text-base sm:text-lg font-semibold tracking-tight">{t("result.title")}</div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-3xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
-                        <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("result.archetypeTitle")}</div>
-                        <div className="mt-1 text-lg font-semibold tracking-tight">{t(`archetype.${profile.archetype}`)}</div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 md:gap-4">
+                    <div className="rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("result.archetypeTitle")}</div>
+                        <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">{t(`archetype.${profile.archetype}`)}</div>
                     </div>
 
-                    <div className="rounded-3xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
-                        <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("result.elementTitle")}</div>
-                        <div className="mt-1 text-lg font-semibold tracking-tight">
+                    <div className="rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("result.elementTitle")}</div>
+                        <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">
                             {ELEMENT_BADGE[profile.element]} {t(`element.${profile.element}`)}
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 text-sm text-neutral-700 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200">
+                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 text-sm sm:text-base text-neutral-700 dark:border-white/10 dark:bg-white/5 dark:text-neutral-200">
                     <div className="font-semibold">{t("result.whyTitle")}</div>
                     <div className="mt-2 leading-relaxed text-neutral-600 dark:text-neutral-300">{t("result.whyBody")}</div>
                 </div>
 
-                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("result.goalTitle")}</div>
-                    <div className="mt-1 text-sm font-semibold tracking-tight">
+                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                    <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("result.goalTitle")}</div>
+                    <div className="mt-1 text-sm sm:text-base font-semibold tracking-tight">
                         {goal ? `${goal.emoji} ${t(`goals.${goal.id}`)}` : t("result.goalEmpty")}
                     </div>
-                    {goalText ? (
-                        <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">“{goalText}”</div>
-                    ) : null}
+                    {goalText ? <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">“{goalText}”</div> : null}
                 </div>
 
                 <div className="mt-5 flex gap-2">
@@ -963,54 +931,51 @@ function Home({
 }) {
     if (!goal || !dailyContent) {
         return (
-            <SoftCard className="p-5">
-                <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                    {/* Production tone */}
-                    {t("welcome.subtitle")}
-                </div>
+            <SoftCard className="p-4 sm:p-5 md:p-6">
+                <div className="text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("welcome.subtitle")}</div>
             </SoftCard>
         );
     }
 
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.goal")}</div>
-                        <div className="mt-1 text-base font-semibold tracking-tight">
+                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.goal")}</div>
+                        <div className="mt-1 text-base sm:text-lg font-semibold tracking-tight">
                             {goal.emoji} {t(`goals.${goal.id}`)}
                         </div>
-                        {goalText ? <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">“{goalText}”</div> : null}
+                        {goalText ? <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">“{goalText}”</div> : null}
                     </div>
 
                     <div className="rounded-3xl border border-black/5 bg-black/5 px-3 py-2 text-right dark:border-white/10 dark:bg-white/5">
-                        <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{t("home.streak")}</div>
-                        <div className="text-lg font-semibold tracking-tight">{streak} 🔥</div>
+                        <div className="text-[11px] sm:text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.streak")}</div>
+                        <div className="text-lg sm:text-xl font-semibold tracking-tight">{streak} 🔥</div>
                     </div>
                 </div>
 
-                <div className="mt-5 rounded-3xl border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.affirmation")}</div>
-                    <div className="mt-2 text-sm leading-relaxed">{dailyContent.affirmation}</div>
+                <div className="mt-5 rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                    <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.affirmation")}</div>
+                    <div className="mt-2 text-sm sm:text-base leading-relaxed">{dailyContent.affirmation}</div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                        <div className="rounded-2xl bg-black/5 px-3 py-2 text-xs text-neutral-700 dark:bg-white/10 dark:text-neutral-200">
+                        <div className="rounded-2xl bg-black/5 px-3 py-2 text-xs sm:text-sm text-neutral-700 dark:bg-white/10 dark:text-neutral-200">
                             {t("home.archetype")}: {t(`archetype.${profile.archetype}`)}
                         </div>
-                        <div className="rounded-2xl bg-black/5 px-3 py-2 text-xs text-neutral-700 dark:bg-white/10 dark:text-neutral-200">
+                        <div className="rounded-2xl bg-black/5 px-3 py-2 text-xs sm:text-sm text-neutral-700 dark:bg-white/10 dark:text-neutral-200">
                             {t("home.element")}: {ELEMENT_BADGE[profile.element]} {t(`element.${profile.element}`)}
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.action")}</div>
-                    <div className="mt-2 text-sm leading-relaxed">{dailyContent.action}</div>
+                <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                    <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.action")}</div>
+                    <div className="mt-2 text-sm sm:text-base leading-relaxed">{dailyContent.action}</div>
                 </div>
 
                 <div className="mt-4">
-                    <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("home.mood")}</div>
+                    <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.mood")}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                         {moods.map((m) => (
                             <Pill key={m.id} active={todayMood === m.id} onClick={() => onMood(m.id)} className="text-sm">
@@ -1021,20 +986,19 @@ function Home({
                 </div>
 
                 <div className="mt-4">
-                    <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                        {t("home.evidenceInputLabel")}
-                    </label>
+                    <label className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{t("home.evidenceInputLabel")}</label>
                     <input
                         value={todayEvidenceText}
                         onChange={(e) => onEvidenceText(e.target.value)}
                         placeholder={t("home.evidencePlaceholder")}
                         className={[
-                            "mt-2 w-full rounded-2xl px-4 py-3 text-sm outline-none",
+                            "mt-2 w-full rounded-2xl px-4 py-3 sm:py-3.5 outline-none",
+                            "text-sm sm:text-base",
                             "border border-black/10 bg-white/70 placeholder:text-neutral-400 focus:border-black/20",
                             "dark:border-white/10 dark:bg-white/5 dark:placeholder:text-neutral-500 dark:focus:border-white/25",
                         ].join(" ")}
                     />
-                    <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{t("home.doneSub")}</div>
+                    <div className="mt-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{t("home.doneSub")}</div>
                 </div>
 
                 <div className="mt-5 space-y-3">
@@ -1049,8 +1013,8 @@ function Home({
                 </div>
             </SoftCard>
 
-            <SoftCard className="p-5">
-                <div className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{t("home.gentleNote")}</div>
+            <SoftCard className="p-4 sm:p-5 md:p-6">
+                <div className="text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("home.gentleNote")}</div>
             </SoftCard>
         </div>
     );
@@ -1067,12 +1031,12 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
     }, [evidence, filterGoal]);
 
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <div className="text-base font-semibold tracking-tight">{t("evidence.title")}</div>
-                        <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{t("evidence.subtitle")}</div>
+                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("evidence.title")}</div>
+                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("evidence.subtitle")}</div>
                     </div>
                     <Pill onClick={onBack}>{t("nav.back")}</Pill>
                 </div>
@@ -1081,9 +1045,7 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
                     {goalsForFilter.map((g) => {
                         const active = filterGoal === g.id;
                         const label =
-                            g.id === "all"
-                                ? t("evidence.filterAll")
-                                : `${goalLabels[g.id]?.emoji || ""} ${goalLabels[g.id]?.label || ""}`;
+                            g.id === "all" ? t("evidence.filterAll") : `${goalLabels[g.id]?.emoji || ""} ${goalLabels[g.id]?.label || ""}`;
                         return (
                             <Pill key={g.id} active={active} onClick={() => setFilterGoal(g.id)}>
                                 {label}
@@ -1094,25 +1056,20 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
 
                 <div className="mt-4 space-y-3">
                     {filtered.length === 0 ? (
-                        <div className="rounded-3xl border border-black/5 bg-black/5 p-4 text-sm text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300">
+                        <div className="rounded-3xl border border-black/5 bg-black/5 p-4 text-sm sm:text-base text-neutral-600 dark:border-white/10 dark:bg-white/5 dark:text-neutral-300">
                             {t("evidence.empty")}
                         </div>
                     ) : (
                         filtered.map((e, idx) => {
                             const g = goalLabels[e.goalId];
                             return (
-                                <div
-                                    key={`${e.date}-${idx}`}
-                                    className="rounded-3xl border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5"
-                                >
+                                <div key={`${e.date}-${idx}`} className="rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
                                     <div className="flex items-center justify-between">
-                                        <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{e.date}</div>
-                                        <div className="text-sm">{moodsMap[e.mood] || "🙂"}</div>
+                                        <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{e.date}</div>
+                                        <div className="text-sm sm:text-base">{moodsMap[e.mood] || "🙂"}</div>
                                     </div>
-                                    <div className="mt-2 text-sm leading-relaxed">{e.text}</div>
-                                    <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-                                        {g ? `${g.emoji} ${g.label}` : ""}
-                                    </div>
+                                    <div className="mt-2 text-sm sm:text-base leading-relaxed">{e.text}</div>
+                                    <div className="mt-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">{g ? `${g.emoji} ${g.label}` : ""}</div>
                                 </div>
                             );
                         })
@@ -1125,25 +1082,25 @@ function EvidenceWall({ evidence, goalLabels, moodsMap, onBack, t }) {
 
 function Progress({ streak, doneCount, evidenceCount, onBack, t }) {
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <div className="text-base font-semibold tracking-tight">{t("progress.title")}</div>
-                        <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{t("progress.subtitle")}</div>
+                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("progress.title")}</div>
+                        <div className="mt-1 text-sm sm:text-base text-neutral-600 dark:text-neutral-300">{t("progress.subtitle")}</div>
                     </div>
                     <Pill onClick={onBack}>{t("nav.back")}</Pill>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="mt-5 grid gap-3 sm:grid-cols-3 md:gap-4">
                     <Stat title={t("progress.streak")} value={`${streak} 🔥`} />
                     <Stat title={t("progress.daysDone")} value={`${doneCount}`} />
                     <Stat title={t("progress.evidenceCount")} value={`${evidenceCount}`} />
                 </div>
 
-                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-sm font-semibold tracking-tight">{t("progress.milestonesTitle")}</div>
-                    <div className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{t("progress.milestonesBody")}</div>
+                <div className="mt-4 rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+                    <div className="text-sm sm:text-base font-semibold tracking-tight">{t("progress.milestonesTitle")}</div>
+                    <div className="mt-2 text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("progress.milestonesBody")}</div>
                 </div>
             </SoftCard>
         </div>
@@ -1152,20 +1109,20 @@ function Progress({ streak, doneCount, evidenceCount, onBack, t }) {
 
 function Stat({ title, value }) {
     return (
-        <div className="rounded-3xl border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{title}</div>
-            <div className="mt-1 text-lg font-semibold tracking-tight">{value}</div>
+        <div className="rounded-3xl border border-black/5 bg-white/70 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+            <div className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400">{title}</div>
+            <div className="mt-1 text-lg sm:text-xl font-semibold tracking-tight">{value}</div>
         </div>
     );
 }
 
 function Settings({ lang, setLang, theme, setTheme, onBack, t }) {
     return (
-        <div className="space-y-4">
-            <SoftCard className="p-5">
+        <div className="space-y-4 sm:space-y-5">
+            <SoftCard className="p-4 sm:p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <div className="text-base font-semibold tracking-tight">{t("settings.title")}</div>
+                        <div className="text-base sm:text-lg font-semibold tracking-tight">{t("settings.title")}</div>
                     </div>
                     <Pill onClick={onBack}>{t("nav.back")}</Pill>
                 </div>
@@ -1197,11 +1154,11 @@ function Settings({ lang, setLang, theme, setTheme, onBack, t }) {
                     </Section>
 
                     <Section title={t("settings.privacyTitle")}>
-                        <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{t("settings.privacyBody")}</p>
+                        <p className="text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("settings.privacyBody")}</p>
                     </Section>
 
                     <Section title={t("settings.aboutTitle")}>
-                        <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{t("settings.aboutBody")}</p>
+                        <p className="text-sm sm:text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{t("settings.aboutBody")}</p>
                     </Section>
                 </div>
             </SoftCard>
@@ -1211,8 +1168,8 @@ function Settings({ lang, setLang, theme, setTheme, onBack, t }) {
 
 function Section({ title, children }) {
     return (
-        <div className="rounded-3xl border border-black/5 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
-            <div className="text-xs font-semibold tracking-tight text-neutral-700 dark:text-neutral-200">{title}</div>
+        <div className="rounded-3xl border border-black/5 bg-black/5 p-4 md:p-5 dark:border-white/10 dark:bg-white/5">
+            <div className="text-xs sm:text-sm font-semibold tracking-tight text-neutral-700 dark:text-neutral-200">{title}</div>
             <div className="mt-3">{children}</div>
         </div>
     );
@@ -1228,7 +1185,7 @@ function BottomNav({ current, onGo, isReady, t }) {
 
     return (
         <div className="fixed bottom-0 left-0 right-0 border-t border-black/5 bg-white/75 backdrop-blur-xl dark:border-white/10 dark:bg-neutral-950/70">
-            <div className="mx-auto w-full max-w-md px-4 pt-2 pb-[calc(0.5rem+var(--sa-bottom))] sm:max-w-lg sm:px-6 md:max-w-2xl lg:max-w-3xl">
+            <div className="mx-auto w-full max-w-md px-4 pt-2 pb-[calc(0.5rem+var(--sa-bottom))] sm:max-w-lg sm:px-6 md:max-w-2xl md:px-8 lg:max-w-3xl xl:max-w-4xl">
                 <div className="flex items-center justify-between gap-2">
                     {items.map((it) => {
                         const active = current === it.id;
@@ -1237,14 +1194,15 @@ function BottomNav({ current, onGo, isReady, t }) {
                                 key={it.id}
                                 onClick={() => onGo(it.id)}
                                 className={[
-                                    "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-xs transition active:scale-[0.99]",
+                                    "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 sm:py-2.5 transition active:scale-[0.99]",
+                                    "text-xs sm:text-sm",
                                     active
                                         ? "bg-black/5 text-neutral-900 dark:bg-white/10 dark:text-neutral-50"
                                         : "text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10",
                                 ].join(" ")}
                             >
-                                <div className="text-base">{it.emoji}</div>
-                                <div className="text-[11px] font-medium">{it.label}</div>
+                                <div className="text-base sm:text-lg">{it.emoji}</div>
+                                <div className="text-[11px] sm:text-xs font-medium">{it.label}</div>
                             </button>
                         );
                     })}
