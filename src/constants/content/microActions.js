@@ -2,8 +2,8 @@ export const MICRO_ACTIONS = {
     relationship: [
         {
             oneMin: {
-                "zh-TW": "傳一則真誠訊息給你欣賞的人：一句簡單的感謝就好（例如：「謝謝你出現在我生命中」）",
-                en: "Send a sincere message to someone you appreciate—a simple thank you is enough (e.g., “I’m so glad you’re in my life”).",
+                "zh-TW": "傳一則真誠訊息給你欣賞的人，一句簡單的感謝就好",
+                en: "Send a sincere message to someone you appreciate—a simple thank you is enough.",
             },
             fiveMin: {
                 "zh-TW": "寫下你渴望在關係中感受到的溫暖，並挑選一個今天就能給予對方的溫柔行動",

@@ -153,7 +153,7 @@ export const I18N = {
     },
 
     result: {
-      title: "你的個人化設定完成",
+      title: "問卷完成",
       archetypeTitle: "行動偏好",
       elementTitle: "能量元素",
       whyTitle: "這會如何影響你的每日提示？",
@@ -194,18 +194,18 @@ export const I18N = {
       newEntry: "新增",
       cancelEdit: "取消",
       startWrite: "開始記錄",
-      saveEntry: "保存",
+      saveEntry: "儲存",
       updateEntry: "更新",
-      entryLockedDone: "✓ 今日已完成",
+      entryLockedDone: "今日已完成",
       entryHintNew: "預設是鎖住的：按右上角「新增」或下方按鈕開始輸入。",
       entryHintUpdate:
-        "預設是鎖住的：按右上角「編輯」後才可修改；有改動才會啟用保存。",
+        "預設是鎖住的：按右上角「編輯」後才可修改；有改動才會啟用儲存。",
     },
 
     steps: {
       title: "心路足跡",
-      subtitle: "你完成的每一步，都在替你把信念慢慢養起來。",
-      empty: "目前還沒有紀錄。完成第一天後，就會出現在這裡。",
+      subtitle: "你完成的每一步，都在替你把信念慢慢養起來",
+      empty: "目前還沒有紀錄，每次完成的旅途都會出現在這裡",
       filterAll: "全部",
     },
 
@@ -218,15 +218,12 @@ export const I18N = {
 
     settings: {
       title: "設定",
-      subtitle: "調整你的使用體驗",
 
       language: "語言",
-      languageHint: "介面語言",
       langZh: "繁中",
       langEn: "EN",
 
       theme: "外觀",
-      themeHint: "系統 / 淺色 / 深色",
       themeSystem: "系統",
       themeLight: "淺色",
       themeDark: "深色",
@@ -430,7 +427,7 @@ export const I18N = {
     },
 
     result: {
-      title: "Your personalization is ready",
+      title: "Your Survey Result",
       archetypeTitle: "Behavior style",
       elementTitle: "Energy element",
       whyTitle: "How this shapes your daily prompts",
@@ -485,7 +482,7 @@ export const I18N = {
       title: "Journey",
       subtitle:
         "Every completed step becomes proof you’re changing—quietly, steadily.",
-      empty: "No entries yet. Complete your first day to see it here.",
+      empty: "No records yet. Your completed journeys will appear here.",
       filterAll: "All",
     },
 
@@ -498,15 +495,12 @@ export const I18N = {
 
     settings: {
       title: "Settings",
-      subtitle: "Personalize your experience",
 
       language: "Language",
-      languageHint: "UI language",
-      langZh: "ZH",
+      langZh: "繁中",
       langEn: "EN",
 
       theme: "Appearance",
-      themeHint: "System / Light / Dark",
       themeSystem: "System",
       themeLight: "Light",
       themeDark: "Dark",
